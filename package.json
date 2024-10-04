@@ -1,0 +1,36 @@
+{
+  "name": "bank-import",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "fix": "prettier . --write"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/uuid": "^10.0.0",
+    "prettier": "^3.3.3",
+    "prettier-plugin-organize-imports": "^4.1.0",
+    "typescript": "^5.5.3"
+  },
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.670.0",
+    "@aws-sdk/client-secrets-manager": "^3.670.0",
+    "@date-fns/tz": "^1.1.2",
+    "@dotenvx/dotenvx": "^1.14.2",
+    "date-fns": "^4.1.0",
+    "jmap-jam": "^0.7.0",
+    "playwright": "^1.47.2",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ts-retry-promise": "^0.8.1",
+    "uuid": "^10.0.0",
+    "winston": "^3.15.0",
+    "ynab": "^2.6.0",
+    "zod": "^3.23.8"
+  },
+  "type": "module"
+}

@@ -1,0 +1,27 @@
+services:
+  bank-import-bmo:
+    <<: &bank-import
+      build:
+        context: .
+        dockerfile: Dockerfile
+      volumes:
+        - ./traces:/app/traces
+      env_file: .env
+      restart: no
+    environment:
+      BANK: bmo
+
+  bank-import-tangerine:
+    <<: *bank-import
+    environment:
+      BANK: tangerine
+
+  bank-import-manulife-bank:
+    <<: *bank-import
+    environment:
+      BANK: manulife-bank
+
+  bank-import-rogers-bank:
+    <<: *bank-import
+    environment:
+      BANK: rogers-bank
