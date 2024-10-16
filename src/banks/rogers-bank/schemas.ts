@@ -1,5 +1,3 @@
-import { tz } from "@date-fns/tz";
-import { formatISO, parse } from "date-fns";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 import env from "../../utils/env.js";
@@ -35,41 +33,28 @@ const Transaction = z
       value: z.coerce.number(),
     }),
     date: z.string(),
-    time: z.string(),
     merchant: z.object({
       name: z.string(),
     }),
+    postedDate: z.string(),
   })
-  .transform((transaction) => ({
-    date: formatISO(
-      parse(
-        `${transaction.date} ${transaction.time}`,
-        "yyyy-MM-dd HH:mm:ss",
-        new Date(),
-        {
-          in: tz("America/Toronto"),
-        },
-      ),
-      {
-        representation: "date",
-        in: tz(env.TZ),
-      },
-    ),
-    amount: transaction.amount.value,
-    description: transaction.merchant.name,
-  }));
+  .transform((transaction) => {
+    const amount = transaction.amount.value * -1;
+    return {
+      date: amount > 0 ? transaction.postedDate : transaction.date,
+      amount: amount,
+      description: transaction.merchant.name,
+    };
+  });
 
 const ActivityResponse = z
   .object({
     activities: z.preprocess(
       (transactions: any) =>
-        transactions.filter(
-          (transaction: any) =>
-            transaction.activityType === "TRANS" &&
-            transaction.activityStatus === "APPROVED",
-        ),
+        transactions.filter((transaction: any) => !!transaction.postedDate),
       z.array(Transaction),
     ),
   })
   .transform(({ activities }) => activities);
+
 export { Account, ActivityResponse, UserResponse };

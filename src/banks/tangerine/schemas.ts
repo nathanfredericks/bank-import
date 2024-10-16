@@ -29,19 +29,26 @@ const AccountResponse = z
 const Transaction = z
   .object({
     transaction_date: z.string(),
+    posted_date: z.string(),
     amount: z.number(),
     description: z.string(),
     is_uncleared: z.boolean(),
     status: z.string(),
   })
-  .transform((transaction) => ({
-    date: formatISO(transaction.transaction_date, {
-      representation: "date",
-      in: tz(env.TZ),
-    }),
-    amount: transaction.amount,
-    description: transaction.description,
-  }));
+  .transform((transaction) => {
+    const date =
+      transaction.amount > 0
+        ? transaction.posted_date
+        : transaction.transaction_date;
+    return {
+      date: formatISO(date, {
+        representation: "date",
+        in: tz(env.TZ),
+      }),
+      amount: transaction.amount,
+      description: transaction.description,
+    };
+  });
 
 const TransactionsResponse = z
   .object({
