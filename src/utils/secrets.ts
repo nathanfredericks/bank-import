@@ -25,21 +25,29 @@ const { SecretString } = await secretsManagerClient.send(
   }),
 );
 
-const Secrets = z.object({
-  VOIPMS_API_USERNAME: z.string(),
-  VOIPMS_API_PASSWORD: z.string(),
-  VOIPMS_DID: z.string(),
-  TANGERINE_LOGIN_ID: z.string(),
-  TANGERINE_PIN: z.string(),
-  MANULIFE_BANK_USERNAME: z.string(),
-  MANULIFE_BANK_PASSWORD: z.string(),
-  BMO_CARD_NUMBER: z.string(),
-  BMO_PASSWORD: z.string(),
-  YNAB_ACCESS_TOKEN: z.string(),
-  JMAP_BEARER_TOKEN: z.string(),
-  ROGERS_BANK_USERNAME: z.string(),
-  ROGERS_BANK_PASSWORD: z.string(),
-});
+const Secrets = z
+  .object({
+    VOIPMS_API_USERNAME: z.string(),
+    VOIPMS_API_PASSWORD: z.string(),
+    VOIPMS_DID: z.string(),
+    TANGERINE_LOGIN_ID: z.string(),
+    TANGERINE_PIN: z.string(),
+    MANULIFE_BANK_USERNAME: z.string(),
+    MANULIFE_BANK_PASSWORD: z.string(),
+    BMO_CARD_NUMBER: z.string(),
+    BMO_PASSWORD: z.string(),
+    YNAB_ACCESS_TOKEN: z.string(),
+    JMAP_BEARER_TOKEN: z.string(),
+    ROGERS_BANK_USERNAME: z.string(),
+    ROGERS_BANK_PASSWORD: z.string(),
+    TANGERINE_SECURITY_QUESTIONS: z.string(),
+  })
+  .transform((secrets) => ({
+    ...secrets,
+    TANGERINE_SECURITY_QUESTIONS: JSON.parse(
+      secrets.TANGERINE_SECURITY_QUESTIONS,
+    ),
+  }));
 
 const secretJson = JSON.parse(SecretString || "{}");
 

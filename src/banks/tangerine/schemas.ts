@@ -56,4 +56,17 @@ const TransactionsResponse = z
   })
   .transform(({ transactions }) => transactions);
 
-export { Account, AccountResponse, TransactionsResponse };
+const DisplayChallengeQuestionResponse = z
+  .object({
+    MessageBody: z.object({
+      Question: z.string(),
+    }),
+  })
+  .transform(({ MessageBody }) => MessageBody.Question);
+
+export {
+  Account,
+  AccountResponse,
+  DisplayChallengeQuestionResponse,
+  TransactionsResponse,
+};
