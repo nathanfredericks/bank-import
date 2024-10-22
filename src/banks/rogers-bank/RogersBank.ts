@@ -24,10 +24,19 @@ export class RogersBank extends Bank {
     return rogersBank;
   }
 
-  private async fetchTransactions(account: z.infer<typeof Account>) {
+  private async fetchTransactions(
+    account: z.infer<typeof Account>,
+    previousStatement: boolean = false,
+  ) {
     logger.debug(`Fetching transactions for account ${account.name}`);
     const response = await fetch(
-      `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity`,
+      `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity?${new URLSearchParams(
+        {
+          cycleStartDate: previousStatement
+            ? account._previousStatementDate || ""
+            : "",
+        },
+      ).toString()}`,
       {
         headers: {
           Cookie: await this.getCookiesAsString(),
@@ -35,6 +44,7 @@ export class RogersBank extends Bank {
       },
     );
     const json = await response.json();
+
     let transactions = ActivityResponse.parse(json);
     transactions = transactions
       .filter((transaction) => {
@@ -43,7 +53,7 @@ export class RogersBank extends Bank {
       })
       .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime());
     logger.debug(
-      `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
+      `Fetched ${transactions.length} transaction(s) for account ${account.name} on ${account._previousStatementDate || "current"} statement`,
       transactions,
     );
 
@@ -56,13 +66,19 @@ export class RogersBank extends Bank {
     const accountsWithTransactions = await Promise.all(
       accounts.map(async (account) => ({
         ...account,
-        transactions: await this.fetchTransactions(account),
+        transactions: [
+          ...(await this.fetchTransactions(account)),
+          ...(account._previousStatementDate
+            ? await this.fetchTransactions(account, true)
+            : []),
+        ],
       })),
     );
 
     this.setAccounts(
       accountsWithTransactions.map(
-        ({ _number, _customerId, ...account }) => account,
+        ({ _number, _customerId, _previousStatementDate, ...account }) =>
+          account,
       ),
     );
   }

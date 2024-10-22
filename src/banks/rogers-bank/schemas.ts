@@ -12,6 +12,7 @@ const Account = z
     customer: z.object({
       customerId: z.string(),
     }),
+    previousStatementDate: z.string().optional(),
   })
   .transform((data) => ({
     id: uuidv5(data.accountId, env.UUID_NAMESPACE),
@@ -19,6 +20,7 @@ const Account = z
     balance: data.currentBalance.value * -1,
     _number: data.accountId,
     _customerId: data.customer.customerId,
+    _previousStatementDate: data.previousStatementDate,
   }));
 
 const UserResponse = z
