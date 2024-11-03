@@ -1,7 +1,7 @@
 import { tz } from "@date-fns/tz";
 import { formatISO, parseISO, subDays } from "date-fns";
 import { z } from "zod";
-import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa.js";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
 import logger from "../../utils/logger.js";
 import { Bank } from "../Bank.js";
 import { BankName } from "../types.js";
@@ -126,8 +126,12 @@ export class ManulifeBank extends Bank {
     if (isTwoFactorAuthenticationRequired) {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
-      await page.getByRole("button", { name: "Text" }).click();
-      const code = await getSMSTwoFactorAuthenticationCode(this.date, "626854");
+      await page.getByRole("button", { name: "Email" }).click();
+      const code = await getEmailTwoFactorAuthenticationCode(
+        this.date,
+        "donotreply@manulife.com",
+        "Here's the code",
+      );
       await page.getByRole("textbox", { name: "Code" }).pressSequentially(code);
       await page.getByRole("button", { name: "Continue" }).click();
 
