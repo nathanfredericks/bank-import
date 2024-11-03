@@ -19,3 +19,10 @@ export enum BankName {
   ManulifeBank = "manulife-bank",
   RogersBank = "rogers-bank",
 }
+
+export const bankName = {
+  [BankName.BMO]: "BMO",
+  [BankName.Tangerine]: "Tangerine",
+  [BankName.ManulifeBank]: "Manulife Bank",
+  [BankName.RogersBank]: "Rogers Bank",
+};

@@ -20,7 +20,7 @@ export class Tangerine extends Bank {
   public static async create(loginID: string, pin: string) {
     const tangerine = new Tangerine();
     try {
-      await tangerine.launchBrowser(true);
+      await tangerine.launchBrowser();
       await tangerine.login(loginID, pin);
       await tangerine.closeBrowser();
     } catch (error) {

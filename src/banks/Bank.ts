@@ -1,13 +1,13 @@
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { BrowserContext, LaunchOptions, Page } from "playwright";
-import { chromium } from "playwright-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
 import { z } from "zod";
+import env from "../utils/env.js";
 import logger from "../utils/logger.js";
 import { uploadFile } from "../utils/s3.js";
-import { Account, BankName } from "./types.js";
+import { sendSMS } from "../utils/sms.js";
+import { Account, bankName, BankName } from "./types.js";
 
 export class Bank {
   private readonly bank: BankName;
@@ -20,13 +20,8 @@ export class Bank {
     this.bank = bank;
   }
 
-  protected async launchBrowser(enableStealthMode = false) {
-    if (enableStealthMode) {
-      logger.debug("Launching browser in stealth mode");
-      chromium.use(StealthPlugin());
-    } else {
-      logger.debug("Launching browser");
-    }
+  protected async launchBrowser() {
+    logger.debug("Launching browser");
     const options: LaunchOptions = {
       headless: false,
       args: [
@@ -71,6 +66,10 @@ export class Bank {
     logger.info(`Saved trace to ${traceFilePath}`);
     const traceFile = await readFile(traceFilePath);
     await uploadFile(traceFileName, "application/zip", traceFile);
+    await sendSMS(
+      env.NOTIFICATION_PHONE_NUMBER,
+      `Error fetching accounts from ${bankName[this.bank]}`,
+    );
   }
 
   protected async getCookies() {
