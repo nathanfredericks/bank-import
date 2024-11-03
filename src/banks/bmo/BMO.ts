@@ -129,7 +129,7 @@ export class BMO extends Bank {
   private async login(cardNumber: string, password: string) {
     const page = await this.getPage();
     logger.debug("Navigating to BMO login page");
-    await page.goto("https://www1.bmo.com/banking/digital/logxin");
+    await page.goto("https://www1.bmo.com/banking/digital/login");
 
     logger.debug("Filling in card number and password");
     await page
