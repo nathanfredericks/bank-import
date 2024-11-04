@@ -2,7 +2,6 @@ import { tz } from "@date-fns/tz";
 import { formatISO, parseISO, subDays } from "date-fns";
 import { z } from "zod";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
-import axios from "../../utils/axios.js";
 import logger from "../../utils/logger.js";
 import { Bank } from "../Bank.js";
 import { BankName } from "../types.js";
@@ -71,7 +70,7 @@ export class ManulifeBank extends Bank {
     });
     const json = await page.evaluate(
       async ({ account, headers, startDate, endDate }) => {
-        const { data } = await axios.get(
+        const response = await fetch(
           `https://online.manulifebank.ca/api/v9/bank/ca/v2/accounts/history/${account._index}/start/${startDate}/end/${endDate}`,
           {
             headers: {
@@ -79,7 +78,7 @@ export class ManulifeBank extends Bank {
             },
           },
         );
-        return data;
+        return await response.json();
       },
       { account, headers, startDate, endDate },
     );
