@@ -1,6 +1,7 @@
 import { formatISO, parseISO, subDays } from "date-fns";
 import { z } from "zod";
 import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa.js";
+import axios from "../../utils/axios.js";
 import logger from "../../utils/logger.js";
 import secrets from "../../utils/secrets.js";
 import { Bank } from "../Bank.js";
@@ -31,7 +32,7 @@ export class Tangerine extends Bank {
 
   private async fetchAccounts() {
     logger.debug("Fetching accounts from Tangerine");
-    const response = await fetch(
+    const { data } = await axios.get(
       "https://secure.tangerine.ca/web/rest/pfm/v1/accounts",
       {
         headers: {
@@ -39,8 +40,7 @@ export class Tangerine extends Bank {
         },
       },
     );
-    const json = await response.json();
-    const accounts = AccountResponse.parse(json);
+    const accounts = AccountResponse.parse(data);
     logger.debug(
       `Fetched ${accounts.length} accounts from Tangerine`,
       accounts,
@@ -56,24 +56,23 @@ export class Tangerine extends Bank {
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
     logger.debug(`Fetching transactions for account ${account.name}`);
-    const response = await fetch(
-      "https://secure.tangerine.ca/web/rest/pfm/v1/transactions?" +
-        new URLSearchParams({
+    const { data } = await axios.get(
+      "https://secure.tangerine.ca/web/rest/pfm/v1/transactions",
+      {
+        params: {
           accountIdentifiers: account._number,
           hideAuthorizedStatus: "true",
           periodFrom: formatISO(subDays(this.date, 10), {
             representation: "date",
           }),
-        }).toString(),
-      {
+        },
         headers: {
           "Accept-Language": "en_CA",
           Cookie: await this.getCookiesAsString(),
         },
       },
     );
-    const json = await response.json();
-    const transactions = TransactionsResponse.parse(json).sort(
+    const transactions = TransactionsResponse.parse(data).sort(
       (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime(),
     );
     logger.debug(

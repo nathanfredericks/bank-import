@@ -1,8 +1,8 @@
 import { parseISO, subDays } from "date-fns";
 import { z } from "zod";
-import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa.js";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
+import axios from "../../utils/axios.js";
 import logger from "../../utils/logger.js";
-import secrets from "../../utils/secrets.js";
 import { Bank } from "../Bank.js";
 import { BankName } from "../types.js";
 import { Account, ActivityResponse, UserResponse } from "./schemas.js";
@@ -24,28 +24,18 @@ export class RogersBank extends Bank {
     return rogersBank;
   }
 
-  private async fetchTransactions(
-    account: z.infer<typeof Account>,
-    previousStatement: boolean = false,
-  ) {
+  private async fetchTransactions(account: z.infer<typeof Account>) {
     logger.debug(`Fetching transactions for account ${account.name}`);
-    const response = await fetch(
-      `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity?${new URLSearchParams(
-        {
-          cycleStartDate: previousStatement
-            ? account._previousStatementDate || ""
-            : "",
-        },
-      ).toString()}`,
+    const { data } = await axios.get(
+      `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity`,
       {
         headers: {
           Cookie: await this.getCookiesAsString(),
         },
       },
     );
-    const json = await response.json();
 
-    let transactions = ActivityResponse.parse(json);
+    let transactions = ActivityResponse.parse(data);
     transactions = transactions
       .filter((transaction) => {
         const date = parseISO(transaction.date);
@@ -53,7 +43,7 @@ export class RogersBank extends Bank {
       })
       .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime());
     logger.debug(
-      `Fetched ${transactions.length} transaction(s) for account ${account.name} on ${account._previousStatementDate || "current"} statement`,
+      `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
       transactions,
     );
 
@@ -66,12 +56,7 @@ export class RogersBank extends Bank {
     const accountsWithTransactions = await Promise.all(
       accounts.map(async (account) => ({
         ...account,
-        transactions: [
-          ...(await this.fetchTransactions(account)),
-          ...(account._previousStatementDate
-            ? await this.fetchTransactions(account, true)
-            : []),
-        ],
+        transactions: await this.fetchTransactions(account),
       })),
     );
 
@@ -108,11 +93,13 @@ export class RogersBank extends Bank {
     if (isTwoFactorAuthenticationRequired) {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
-      await page
-        .getByRole("radio", { name: secrets.VOIPMS_DID.slice(-4) })
-        .click();
+      await page.getByRole("radio", { name: "@" }).click();
       await page.getByRole("button", { name: "Send code" }).click();
-      const code = await getSMSTwoFactorAuthenticationCode(this.date, "74979");
+      const code = await getEmailTwoFactorAuthenticationCode(
+        this.date,
+        "onlineservices@RogersBank.com",
+        "Your verification code",
+      );
       await page.getByRole("button", { name: "OK" }).click();
       await page.getByRole("textbox", { name: "One-time passcode" }).fill(code);
       await page.getByRole("button", { name: "Continue" }).click();
