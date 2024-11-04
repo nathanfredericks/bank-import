@@ -3,6 +3,7 @@ import { format, formatISO, parseISO, subDays } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
+import axios from "../../utils/axios.js";
 import logger from "../../utils/logger.js";
 import { Bank } from "../Bank.js";
 import { BankName } from "../types.js";
@@ -76,12 +77,9 @@ export class BMO extends Bank {
         : {
             filter: "unbilled",
           };
-    const response = await fetch(url, {
-      headers: {
-        "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
-        Cookie: await this.getCookiesAsString(),
-      },
-      body: JSON.stringify({
+    const { data } = await axios.post(
+      url,
+      {
         MySummaryRq: {
           HdrRq: await this.generateRequestHeaders(),
           BodyRq: {
@@ -90,14 +88,18 @@ export class BMO extends Bank {
             ...filters,
           },
         },
-      }),
-      method: "POST",
-    });
-    const json = await response.json();
+      },
+      {
+        headers: {
+          "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+          Cookie: await this.getCookiesAsString(),
+        },
+      },
+    );
     let transactions =
       account._type === "BANK_ACCOUNT"
-        ? BankAccountTransactionsResponse.parse(json)
-        : CreditCardTransactionsResponse.parse(json);
+        ? BankAccountTransactionsResponse.parse(data)
+        : CreditCardTransactionsResponse.parse(data);
     transactions = transactions
       .filter(
         (transaction) => parseISO(transaction.date) >= subDays(this.date, 10),
