@@ -31,30 +31,36 @@ export class Tangerine extends Bank {
   }
 
   private async fetchAccounts() {
+    const page = await this.getPage();
+
     logger.debug("Fetching accounts from Tangerine");
-    const { data } = await axios.get(
-      "https://secure.tangerine.ca/web/rest/pfm/v1/accounts",
-      {
-        headers: {
-          Cookie: await this.getCookiesAsString(),
-        },
-      },
+    const response = await page.waitForResponse(
+      (response) =>
+        response.url() ===
+          "https://secure.tangerine.ca/web/rest/pfm/v1/accounts" &&
+        response.request().method() === "GET",
     );
-    const accounts = AccountResponse.parse(data);
+    const json = await response.json();
+    const accounts = AccountResponse.parse(json);
     logger.debug(
       `Fetched ${accounts.length} accounts from Tangerine`,
       accounts,
     );
 
+    const cookies = (await response.request().headerValue("Cookie")) || "";
+
     return await Promise.all(
       accounts.map(async (account) => ({
         ...account,
-        transactions: await this.fetchTransactions(account),
+        transactions: await this.fetchTransactions(account, cookies),
       })),
     );
   }
 
-  private async fetchTransactions(account: z.infer<typeof Account>) {
+  private async fetchTransactions(
+    account: z.infer<typeof Account>,
+    cookies: string,
+  ) {
     logger.debug(`Fetching transactions for account ${account.name}`);
     const { data } = await axios.get(
       "https://secure.tangerine.ca/web/rest/pfm/v1/transactions",
@@ -67,8 +73,7 @@ export class Tangerine extends Bank {
           }),
         },
         headers: {
-          "Accept-Language": "en_CA",
-          Cookie: await this.getCookiesAsString(),
+          Cookie: cookies,
         },
       },
     );
@@ -130,16 +135,23 @@ export class Tangerine extends Bank {
         url.toString() ===
           "https://www.tangerine.ca/app/#/accounts?locale=en_CA" ||
         url.toString() ===
-          "https://www.tangerine.ca/app/#/login/two-factor-authentication?locale=en_CA",
+          "https://www.tangerine.ca/app/#/login/two-factor-authentication?locale=en_CA" ||
+        url.toString() ===
+          "https://www.tangerine.ca/app/#/login/security-code?locale=en_CA",
     );
 
     if (
       page.url() ===
-      "https://www.tangerine.ca/app/#/login/two-factor-authentication?locale=en_CA"
+        "https://www.tangerine.ca/app/#/login/two-factor-authentication?locale=en_CA" ||
+      page.url() ===
+        "https://www.tangerine.ca/app/#/login/security-code?locale=en_CA"
     ) {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
-      const code = await getSMSTwoFactorAuthenticationCode(this.date, "864732");
+      const code = await getSMSTwoFactorAuthenticationCode(
+        this.date,
+        "tangerine",
+      );
       await page.getByRole("textbox", { name: "Security Code" }).fill(code);
       await page.getByRole("button", { name: "Log In" }).click();
     }
