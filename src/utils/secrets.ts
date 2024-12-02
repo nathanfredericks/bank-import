@@ -41,6 +41,7 @@ const Secrets = z
     ROGERS_BANK_USERNAME: z.string(),
     ROGERS_BANK_PASSWORD: z.string(),
     TANGERINE_SECURITY_QUESTIONS: z.string(),
+    MESSAGES_API_KEY: z.string(),
   })
   .transform((secrets) => ({
     ...secrets,

@@ -1,6 +1,4 @@
-import { tz } from "@date-fns/tz";
 import axios from "axios";
-import { format } from "date-fns";
 import { convert } from "html-to-text";
 import { JamClient } from "jmap-jam";
 import { retry } from "ts-retry-promise";
@@ -19,33 +17,26 @@ function getSMSTwoFactorAuthenticationCode(afterDate: Date, sender?: string) {
   return retry(
     async () => {
       logger.debug("Fetching SMS/MMS messages");
-      const { data } = await axios.get("https://voip.ms/api/v1/rest.php", {
-        params: {
-          api_username: secrets.VOIPMS_API_USERNAME || "",
-          api_password: secrets.VOIPMS_API_PASSWORD || "",
-          method: "getSMS",
-          did: secrets.VOIPMS_DID || "",
-          limit: "1",
-          all_messages: "1",
-          from: format(afterDate, "yyyy-MM-dd HH:mm:ss", {
-            in: tz("America/New_York"),
-          }),
-          ...(sender ? { contact: sender } : {}),
+      const { data } = await axios.get(
+        "https://messages.fredericks.app/messages",
+        {
+          params: {
+            after: afterDate.valueOf(),
+            sender,
+          },
+          headers: {
+            "X-API-Key": secrets.MESSAGES_API_KEY,
+          },
         },
-      });
-      const {
-        status,
-        sms: [{ message }],
-      } = Response.parse(data);
-      if (status === "no_sms") {
+      );
+      const [message] = Response.parse(data);
+      if (!message) {
         logger.debug("No SMS/MMS messages found", message);
         throw new Error("No SMS/MMS messages found");
       }
-      if (status !== "success") {
-        logger.notice("Error fetching SMS/MMS messages", status);
-        throw new Error(`Error fetching SMS/MMS messages: ${status}`);
-      }
-      const code = message.match(TWO_FACTOR_AUTHENTICATION_CODE_REGEX)?.[0];
+      const code = message.text.match(
+        TWO_FACTOR_AUTHENTICATION_CODE_REGEX,
+      )?.[0];
       if (!code) {
         logger.error("2FA code not found", message);
         throw new Error("2FA code not found");
