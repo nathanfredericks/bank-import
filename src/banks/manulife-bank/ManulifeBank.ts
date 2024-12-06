@@ -30,8 +30,7 @@ export class ManulifeBank extends Bank {
     logger.debug("Fetching accounts from Manulife Bank");
     const response = await page.waitForResponse(
       (response) =>
-        response.url() ===
-          "https://online.manulifebank.ca/api/v9/bank/ca/v2/accounts/" &&
+        response.url() === "https://online.manulifebank.ca/api/v2/accounts/" &&
         response.request().method() === "GET",
     );
     const json = await response.json();
@@ -71,7 +70,7 @@ export class ManulifeBank extends Bank {
     const json = await page.evaluate(
       async ({ account, headers, startDate, endDate }) => {
         const response = await fetch(
-          `https://online.manulifebank.ca/api/v9/bank/ca/v2/accounts/history/${account._index}/start/${startDate}/end/${endDate}`,
+          `https://online.manulifebank.ca/api/v2/accounts/history/${account._index}/start/${startDate}/end/${endDate}`,
           {
             headers: {
               ...headers,
