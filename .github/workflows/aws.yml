@@ -42,7 +42,6 @@ jobs:
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: your-ecr-repo-name
           IMAGE_TAG: latest
         run: |
           docker buildx build \
