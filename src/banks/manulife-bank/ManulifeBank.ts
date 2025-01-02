@@ -101,14 +101,15 @@ export class ManulifeBank extends Bank {
     await page.getByRole("button", { name: "Sign in" }).click();
 
     logger.debug("Filling in username and password");
+    await page.waitForLoadState("networkidle");
     await page.getByRole("textbox", { name: "Username" }).click();
     await page
       .getByRole("textbox", { name: "Username" })
-      .pressSequentially(username);
+      .pressSequentially(username, { delay: 100 });
     await page.getByRole("textbox", { name: "Password" }).click();
     await page
       .getByRole("textbox", { name: "Password" })
-      .pressSequentially(password);
+      .pressSequentially(password, { delay: 100 });
     await page.getByRole("button", { name: "Sign In" }).click();
 
     logger.debug("Waiting for response");
