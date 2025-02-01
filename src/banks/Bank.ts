@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
 import { z } from "zod";
 import logger from "../utils/logger.js";
-import { sendNotification } from "../utils/pushover";
+import { sendNotification } from "../utils/pushover.js";
 import { uploadFile } from "../utils/s3.js";
 import { Account, bankName, BankName } from "./types.js";
 
