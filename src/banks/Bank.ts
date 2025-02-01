@@ -3,10 +3,9 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
 import { z } from "zod";
-import env from "../utils/env.js";
 import logger from "../utils/logger.js";
+import { sendNotification } from "../utils/pushover";
 import { uploadFile } from "../utils/s3.js";
-import { sendSMS } from "../utils/sms.js";
 import { Account, bankName, BankName } from "./types.js";
 
 export class Bank {
@@ -66,9 +65,13 @@ export class Bank {
     logger.info(`Saved trace to ${traceFilePath}`);
     const traceFile = await readFile(traceFilePath);
     await uploadFile(traceFileName, "application/zip", traceFile);
-    await sendSMS(
-      env.NOTIFICATION_PHONE_NUMBER,
-      `Error fetching accounts from ${bankName[this.bank]}`,
+    await sendNotification(
+      `Error fetching accounts from ${bankName[this.bank]}.`,
+      {
+        title: "Error Fetching Accounts",
+        url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
+        url_title: "Open AWS Console",
+      },
     );
   }
 

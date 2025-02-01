@@ -42,6 +42,8 @@ const Secrets = z
     ROGERS_BANK_PASSWORD: z.string(),
     TANGERINE_SECURITY_QUESTIONS: z.string(),
     MESSAGES_API_KEY: z.string(),
+    PUSHOVER_TOKEN: z.string(),
+    PUSHOVER_USER: z.string(),
   })
   .transform((secrets) => ({
     ...secrets,
