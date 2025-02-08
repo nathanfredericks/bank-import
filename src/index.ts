@@ -63,5 +63,5 @@ try {
       logger.info("Imported transactions from Rogers Bank");
   }
 } catch (error) {
-  logger.error(error);
+  console.error(error);
 }
