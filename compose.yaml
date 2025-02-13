@@ -10,18 +10,22 @@ services:
       restart: no
     environment:
       BANK: bmo
+    command: ["python", "src/index.py"]
 
   bank-import-tangerine:
     <<: *bank-import
     environment:
       BANK: tangerine
+    command: ["python", "src/index.py"]
 
   bank-import-manulife-bank:
     <<: *bank-import
     environment:
       BANK: manulife-bank
+    command: ["python", "src/index.py"]
 
   bank-import-rogers-bank:
     <<: *bank-import
     environment:
       BANK: rogers-bank
+    command: ["python", "src/index.py"]

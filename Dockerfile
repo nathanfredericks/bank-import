@@ -1,12 +1,10 @@
-FROM mcr.microsoft.com/playwright:v1.47.2-noble
+FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm install
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN npm run build
-
-CMD ["sh", "-c", "xvfb-run node dist/index.js"]
+CMD ["python", "src/index.py"]
