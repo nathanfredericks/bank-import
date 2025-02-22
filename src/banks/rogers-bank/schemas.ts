@@ -53,7 +53,9 @@ const ActivityResponse = z
   .object({
     activities: z.preprocess(
       (transactions: any) =>
-        transactions.filter((transaction: any) => !!transaction.postedDate),
+        Array.isArray(transactions)
+          ? transactions.filter((transaction: any) => !!transaction.postedDate)
+          : [],
       z.array(Transaction),
     ),
   })
