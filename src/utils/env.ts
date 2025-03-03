@@ -18,6 +18,9 @@ const Env = z.object({
   AWS_DEFAULT_REGION: z.string().optional(),
   BANK: z.nativeEnum(BankName),
   AWS_S3_BUCKET_NAME: z.string().optional(),
+  PROXY_SERVER: z.string().optional(),
+  PROXY_USERNAME: z.string().optional(),
+  PROXY_PASSWORD: z.string().optional(),
 });
 
 export default Env.parse({

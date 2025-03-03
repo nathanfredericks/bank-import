@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
 import { z } from "zod";
+import env from "../utils/env.js";
 import logger from "../utils/logger.js";
 import { sendNotification } from "../utils/pushover.js";
 import { uploadFile } from "../utils/s3.js";
@@ -29,6 +30,13 @@ export class Bank {
         "--disable-blink-features=AutomationControlled",
       ],
     };
+    if (env.PROXY_SERVER && env.PROXY_USERNAME && env.PROXY_PASSWORD) {
+      options.proxy = {
+        server: env.PROXY_SERVER,
+        username: env.PROXY_USERNAME,
+        password: env.PROXY_PASSWORD,
+      };
+    }
     const browser = await chromium.launch(options);
     logger.debug("Creating new context");
     this.context = await browser.newContext();
