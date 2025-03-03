@@ -6,7 +6,7 @@ if (env.PROXY_SERVER && env.PROXY_USERNAME && env.PROXY_PASSWORD) {
   const url = new URL(env.PROXY_SERVER);
   config.proxy = {
     protocol: url.protocol,
-    host: url.host,
+    host: url.host.split(":")[0],
     port: parseInt(url.port),
     auth: {
       username: env.PROXY_USERNAME,
