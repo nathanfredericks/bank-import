@@ -29,14 +29,14 @@ const NestedCategory = BaseCategory.extend({
 
 const InvestmentsCategory = BaseCategory.extend({
   categoryName: z.literal("IN"),
-  categories: z.array(NestedCategory),
+  categories: z.array(NestedCategory).optional(),
 }).transform((data) => {
-  const nestedAccounts = data.categories.flatMap(
+  const nestedAccounts = data.categories?.flatMap(
     (category) => category.products || [],
   );
   return {
     ...data,
-    products: (data.products || []).concat(nestedAccounts),
+    products: (data.products || []).concat(nestedAccounts || []),
   };
 });
 
