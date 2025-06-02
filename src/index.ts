@@ -16,7 +16,6 @@ try {
       );
       const bmoAccounts = await bmo.getAccounts();
       await importTransactions(bmoAccounts);
-      await bmo.closeBrowser();
       logger.info("Imported transactions from BMO");
       break;
     case BankName.RogersBank:
