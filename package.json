@@ -22,7 +22,7 @@
     "@aws-sdk/client-secrets-manager": "^3.670.0",
     "@date-fns/tz": "^1.1.2",
     "@dotenvx/dotenvx": "^1.14.2",
-    "axios": "^1.7.7",
+    "axios": "^1.8.2",
     "date-fns": "^4.1.0",
     "html-to-text": "^9.0.5",
     "jmap-jam": "^0.7.0",
