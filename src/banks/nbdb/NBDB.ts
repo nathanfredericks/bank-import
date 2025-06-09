@@ -1,8 +1,8 @@
-import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
-import logger from "../../utils/logger.js";
-import { Bank } from "../Bank.js";
-import { BankName } from "../types.js";
-import { AuthnResponse, SummaryResponse } from "./schemas.js";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import logger from "../../utils/logger";
+import { Bank } from "../Bank";
+import { BankName } from "../types";
+import { AuthnResponse, SummaryResponse } from "./schemas";
 
 export class NBDB extends Bank {
   constructor() {
