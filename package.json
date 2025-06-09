@@ -12,28 +12,28 @@
     "@swc/cli": "^0.7.7",
     "@swc/core": "^1.11.31",
     "@types/html-to-text": "^9.0.4",
-    "@types/node": "^22.7.4",
+    "@types/node": "^22.15.30",
     "@types/uuid": "^10.0.0",
-    "prettier": "^3.3.3",
+    "prettier": "^3.5.3",
     "prettier-plugin-organize-imports": "^4.1.0",
-    "typescript": "^5.5.3"
+    "typescript": "^5.8.3"
   },
   "private": true,
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.670.0",
-    "@aws-sdk/client-secrets-manager": "^3.670.0",
-    "@date-fns/tz": "^1.1.2",
-    "@dotenvx/dotenvx": "^1.14.2",
-    "axios": "^1.8.2",
+    "@aws-sdk/client-s3": "^3.826.0",
+    "@aws-sdk/client-secrets-manager": "^3.826.0",
+    "@date-fns/tz": "^1.2.0",
+    "@dotenvx/dotenvx": "^1.44.1",
+    "axios": "^1.9.0",
     "date-fns": "^4.1.0",
     "html-to-text": "^9.0.5",
-    "jmap-jam": "^0.7.0",
-    "playwright": "^1.47.2",
+    "jmap-jam": "^0.10.1",
+    "playwright": "^1.52.0",
     "ts-retry-promise": "^0.8.1",
     "uuid": "^10.0.0",
-    "winston": "^3.15.0",
-    "ynab": "^2.6.0",
-    "zod": "^3.23.8"
+    "winston": "^3.17.0",
+    "ynab": "^2.9.0",
+    "zod": "^3.25.56"
   },
   "type": "module"
 }
