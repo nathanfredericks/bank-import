@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
 import { z } from "zod";
-import env from "../utils/env.js";
-import logger from "../utils/logger.js";
-import { sendNotification } from "../utils/pushover.js";
-import { uploadFile } from "../utils/s3.js";
-import { Account, BankName, bankNames } from "./types.js";
+import env from "../utils/env";
+import logger from "../utils/logger";
+import { sendNotification } from "../utils/pushover";
+import { uploadFile } from "../utils/s3";
+import { Account, BankName, bankNames } from "./types";
 
 export class Bank {
   private readonly bank: BankName;

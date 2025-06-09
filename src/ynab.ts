@@ -1,10 +1,10 @@
 import * as ynab from "ynab";
 import { TransactionClearedStatus } from "ynab";
 import { z } from "zod";
-import { Account, BankName, bankNames } from "./banks/types.js";
-import env from "./utils/env.js";
-import logger from "./utils/logger.js";
-import secrets from "./utils/secrets.js";
+import { Account, BankName, bankNames } from "./banks/types";
+import env from "./utils/env";
+import logger from "./utils/logger";
+import secrets from "./utils/secrets";
 
 const ynabAPI = new ynab.API(secrets.YNAB_ACCESS_TOKEN);
 

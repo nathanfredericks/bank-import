@@ -13,3 +13,8 @@ services:
     <<: *bank-import
     environment:
       BANK: rogers-bank
+
+  bank-import-nbdb:
+    <<: *bank-import
+    environment:
+      BANK: nbdb

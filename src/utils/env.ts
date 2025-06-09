@@ -1,6 +1,6 @@
 import { config } from "@dotenvx/dotenvx";
 import { z } from "zod";
-import { BankName } from "../banks/types.js";
+import { BankName } from "../banks/types";
 
 const env = config({
   quiet: true,

@@ -2,11 +2,11 @@ import { tz } from "@date-fns/tz";
 import { format, formatISO, parseISO, subDays } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
-import axios from "../../utils/axios.js";
-import logger from "../../utils/logger.js";
-import { Bank } from "../Bank.js";
-import { BankName } from "../types.js";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import axios from "../../utils/axios";
+import logger from "../../utils/logger";
+import { Bank } from "../Bank";
+import { BankName } from "../types";
 import {
   Account,
   AuthenticateResponse,
@@ -14,7 +14,7 @@ import {
   CreditCardTransactionsResponse,
   VerifyCredentialResponse,
   VerifyTwoFactorAuthenticationCodeResponse,
-} from "./schemas.js";
+} from "./schemas";
 
 export class BMO extends Bank {
   constructor() {

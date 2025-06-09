@@ -4,7 +4,7 @@ import {
   SecretsManagerClientConfig,
 } from "@aws-sdk/client-secrets-manager";
 import { z } from "zod";
-import env from "./env.js";
+import env from "./env";
 
 const config: SecretsManagerClientConfig = {};
 if (
@@ -26,20 +26,16 @@ const { SecretString } = await secretsManagerClient.send(
 );
 
 const Secrets = z.object({
-  VOIPMS_API_USERNAME: z.string(),
-  VOIPMS_API_PASSWORD: z.string(),
-  VOIPMS_DID: z.string(),
   BMO_CARD_NUMBER: z.string(),
   BMO_PASSWORD: z.string(),
-  YNAB_ACCESS_TOKEN: z.string(),
-  JMAP_BEARER_TOKEN: z.string(),
   ROGERS_BANK_USERNAME: z.string(),
   ROGERS_BANK_PASSWORD: z.string(),
-  MESSAGES_API_KEY: z.string(),
-  PUSHOVER_TOKEN: z.string(),
-  PUSHOVER_USER: z.string(),
   NBDB_USER_ID: z.string(),
   NBDB_PASSWORD: z.string(),
+  YNAB_ACCESS_TOKEN: z.string(),
+  JMAP_BEARER_TOKEN: z.string(),
+  PUSHOVER_TOKEN: z.string(),
+  PUSHOVER_USER: z.string(),
 });
 
 const secretJson = JSON.parse(SecretString || "{}");
