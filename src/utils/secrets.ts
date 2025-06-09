@@ -25,32 +25,22 @@ const { SecretString } = await secretsManagerClient.send(
   }),
 );
 
-const Secrets = z
-  .object({
-    VOIPMS_API_USERNAME: z.string(),
-    VOIPMS_API_PASSWORD: z.string(),
-    VOIPMS_DID: z.string(),
-    TANGERINE_LOGIN_ID: z.string(),
-    TANGERINE_PIN: z.string(),
-    MANULIFE_BANK_USERNAME: z.string(),
-    MANULIFE_BANK_PASSWORD: z.string(),
-    BMO_CARD_NUMBER: z.string(),
-    BMO_PASSWORD: z.string(),
-    YNAB_ACCESS_TOKEN: z.string(),
-    JMAP_BEARER_TOKEN: z.string(),
-    ROGERS_BANK_USERNAME: z.string(),
-    ROGERS_BANK_PASSWORD: z.string(),
-    TANGERINE_SECURITY_QUESTIONS: z.string(),
-    MESSAGES_API_KEY: z.string(),
-    PUSHOVER_TOKEN: z.string(),
-    PUSHOVER_USER: z.string(),
-  })
-  .transform((secrets) => ({
-    ...secrets,
-    TANGERINE_SECURITY_QUESTIONS: JSON.parse(
-      secrets.TANGERINE_SECURITY_QUESTIONS,
-    ),
-  }));
+const Secrets = z.object({
+  VOIPMS_API_USERNAME: z.string(),
+  VOIPMS_API_PASSWORD: z.string(),
+  VOIPMS_DID: z.string(),
+  BMO_CARD_NUMBER: z.string(),
+  BMO_PASSWORD: z.string(),
+  YNAB_ACCESS_TOKEN: z.string(),
+  JMAP_BEARER_TOKEN: z.string(),
+  ROGERS_BANK_USERNAME: z.string(),
+  ROGERS_BANK_PASSWORD: z.string(),
+  MESSAGES_API_KEY: z.string(),
+  PUSHOVER_TOKEN: z.string(),
+  PUSHOVER_USER: z.string(),
+  NBDB_USER_ID: z.string(),
+  NBDB_PASSWORD: z.string(),
+});
 
 const secretJson = JSON.parse(SecretString || "{}");
 

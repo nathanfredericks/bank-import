@@ -7,7 +7,7 @@ import env from "../utils/env.js";
 import logger from "../utils/logger.js";
 import { sendNotification } from "../utils/pushover.js";
 import { uploadFile } from "../utils/s3.js";
-import { Account, bankName, BankName } from "./types.js";
+import { Account, BankName, bankNames } from "./types.js";
 
 export class Bank {
   private readonly bank: BankName;
@@ -74,7 +74,7 @@ export class Bank {
     const traceFile = await readFile(traceFilePath);
     await uploadFile(traceFileName, "application/zip", traceFile);
     await sendNotification(
-      `Error fetching accounts from ${bankName[this.bank]}.`,
+      `Error fetching accounts from ${bankNames[this.bank]}.`,
       {
         title: "Error Fetching Accounts",
         url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
