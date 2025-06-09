@@ -1,10 +1,11 @@
 import { BMO } from "./banks/bmo/BMO.js";
+import { NBDB } from "./banks/nbdb/NBDB.js";
 import { RogersBank } from "./banks/rogers-bank/RogersBank.js";
 import { BankName } from "./banks/types.js";
 import env from "./utils/env.js";
 import logger from "./utils/logger.js";
 import secrets from "./utils/secrets.js";
-import { importTransactions } from "./ynab.js";
+import { importTransactions, updateAccountBalances } from "./ynab.js";
 
 try {
   switch (env.BANK) {
@@ -31,6 +32,20 @@ try {
       }
       await importTransactions(rogersBankAccounts);
       logger.info("Imported transactions from Rogers Bank");
+    case BankName.NBDB:
+      logger.info("Importing transactions from NBDB");
+      const nbdb = await NBDB.create(
+        secrets.NBDB_USER_ID,
+        secrets.NBDB_PASSWORD,
+      );
+      const nbdbAccounts = await nbdb.getAccounts();
+      if (!nbdbAccounts.length) {
+        logger.error("Error fetching accounts from NBDB");
+        process.exit(1);
+      }
+      await updateAccountBalances(nbdbAccounts, BankName.NBDB);
+      logger.info("Updated account balances from NBDB");
+      break;
   }
 } catch (error) {
   console.error(error);

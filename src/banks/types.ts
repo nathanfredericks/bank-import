@@ -15,14 +15,12 @@ export const Account = z.object({
 
 export enum BankName {
   BMO = "bmo",
-  Tangerine = "tangerine",
-  ManulifeBank = "manulife-bank",
   RogersBank = "rogers-bank",
+  NBDB = "nbdb",
 }
 
-export const bankName = {
+export const bankNames = {
   [BankName.BMO]: "BMO",
-  [BankName.Tangerine]: "Tangerine",
-  [BankName.ManulifeBank]: "Manulife Bank",
   [BankName.RogersBank]: "Rogers Bank",
+  [BankName.NBDB]: "NBDB",
 };

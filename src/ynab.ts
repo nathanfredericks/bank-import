@@ -1,7 +1,7 @@
 import * as ynab from "ynab";
 import { TransactionClearedStatus } from "ynab";
 import { z } from "zod";
-import { Account } from "./banks/types.js";
+import { Account, BankName, bankNames } from "./banks/types.js";
 import env from "./utils/env.js";
 import logger from "./utils/logger.js";
 import secrets from "./utils/secrets.js";
@@ -85,4 +85,72 @@ export async function importTransactions(accounts: z.infer<typeof Account>[]) {
 
   const { transactions: imported } = response.data;
   logger.debug(`Imported ${imported?.length} transaction(s)`, imported);
+}
+
+export async function updateAccountBalances(
+  accounts: z.infer<typeof Account>[],
+  bankName: BankName,
+) {
+  logger.debug("Updating account balances in YNAB");
+
+  logger.debug("Fetching YNAB accounts");
+  const ynabAccounts = await ynabAPI.accounts
+    .getAccounts(env.YNAB_BUDGET_ID)
+    .then((response) =>
+      response.data.accounts.filter((account) => !account.deleted),
+    );
+
+  logger.debug(`Fetched ${ynabAccounts.length} YNAB accounts`);
+
+  let adjustmentsCreated = 0;
+
+  const findYnabAccount = (account: z.infer<typeof Account>) => {
+    return ynabAccounts.find((ynabAccount) =>
+      ynabAccount.note?.includes(account.id),
+    );
+  };
+
+  for (const account of accounts) {
+    const matchedYnabAccount = findYnabAccount(account);
+
+    if (!matchedYnabAccount) {
+      logger.debug(
+        `No matching YNAB account found for bank account ${account.id}`,
+      );
+      continue;
+    }
+
+    const desiredBalance = Math.round(account.balance * 1000);
+    const currentBalance = matchedYnabAccount.balance;
+    const adjustment = desiredBalance - currentBalance;
+
+    if (adjustment !== 0) {
+      const transaction = {
+        account_id: matchedYnabAccount.id,
+        payee_id: "df22f16d-449b-4214-98da-2844de326faf",
+        date: new Date().toLocaleDateString("en-CA", {
+          timeZone: "America/Halifax",
+        }),
+        amount: adjustment,
+        memo: `Entered automatically from ${bankNames[bankName]}`,
+        cleared: TransactionClearedStatus.Reconciled,
+        approved: true,
+      };
+
+      await ynabAPI.transactions.createTransaction(env.YNAB_BUDGET_ID, {
+        transaction,
+      });
+
+      adjustmentsCreated++;
+      logger.debug(
+        `Created balance adjustment for YNAB account ${matchedYnabAccount.id} (${matchedYnabAccount.name}): ${adjustment} milliunits`,
+      );
+    } else {
+      logger.debug(
+        `No adjustment needed for YNAB account ${matchedYnabAccount.id} (${matchedYnabAccount.name})`,
+      );
+    }
+  }
+
+  logger.debug(`Created ${adjustmentsCreated} balance adjustment(s)`);
 }
