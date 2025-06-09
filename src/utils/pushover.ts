@@ -1,5 +1,5 @@
 import axios from "axios";
-import secrets from "./secrets.js";
+import secrets from "./secrets";
 
 async function sendNotification(message: string, options = {}) {
   console.log(`Sending notification to Pushover: ${message}`);

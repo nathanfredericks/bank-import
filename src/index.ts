@@ -1,11 +1,11 @@
-import { BMO } from "./banks/bmo/BMO.js";
-import { NBDB } from "./banks/nbdb/NBDB.js";
-import { RogersBank } from "./banks/rogers-bank/RogersBank.js";
-import { BankName } from "./banks/types.js";
-import env from "./utils/env.js";
-import logger from "./utils/logger.js";
-import secrets from "./utils/secrets.js";
-import { importTransactions, updateAccountBalances } from "./ynab.js";
+import { BMO } from "./banks/bmo/BMO";
+import { NBDB } from "./banks/nbdb/NBDB";
+import { RogersBank } from "./banks/rogers-bank/RogersBank";
+import { BankName } from "./banks/types";
+import env from "./utils/env";
+import logger from "./utils/logger";
+import secrets from "./utils/secrets";
+import { importTransactions, updateAccountBalances } from "./ynab";
 
 try {
   switch (env.BANK) {

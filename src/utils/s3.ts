@@ -1,6 +1,6 @@
 import { PutObjectCommand, S3Client, S3ClientConfig } from "@aws-sdk/client-s3";
-import env from "./env.js";
-import logger from "./logger.js";
+import env from "./env";
+import logger from "./logger";
 
 const config: S3ClientConfig = {};
 if (

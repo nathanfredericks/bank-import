@@ -1,56 +1,15 @@
-import axios from "axios";
 import { convert } from "html-to-text";
 import { JamClient } from "jmap-jam";
 import { retry } from "ts-retry-promise";
-import env from "./env.js";
-import logger from "./logger.js";
-import secrets from "./secrets.js";
-import { Response } from "./types.js";
+import env from "./env";
+import logger from "./logger";
+import secrets from "./secrets";
 
 const jam = new JamClient({
   sessionUrl: env.JMAP_SESSION_URL,
   bearerToken: secrets.JMAP_BEARER_TOKEN,
 });
 const TWO_FACTOR_AUTHENTICATION_CODE_REGEX = /\b\d{6}\b|\b\d{8}\b/;
-
-function getSMSTwoFactorAuthenticationCode(afterDate: Date, sender?: string) {
-  return retry(
-    async () => {
-      logger.debug("Fetching SMS/MMS messages");
-      const { data } = await axios.get(
-        "https://messages.fredericks.app/messages",
-        {
-          params: {
-            after: afterDate.valueOf(),
-            sender,
-          },
-          headers: {
-            "X-API-Key": secrets.MESSAGES_API_KEY,
-          },
-        },
-      );
-      const [message] = Response.parse(data);
-      if (!message) {
-        logger.debug("No SMS/MMS messages found", message);
-        throw new Error("No SMS/MMS messages found");
-      }
-      const code = message.text.match(
-        TWO_FACTOR_AUTHENTICATION_CODE_REGEX,
-      )?.[0];
-      if (!code) {
-        logger.error("2FA code not found", message);
-        throw new Error("2FA code not found");
-      }
-      logger.debug("Fetched 2FA code");
-      return code;
-    },
-    {
-      retries: "INFINITELY",
-      delay: 1000,
-      timeout: 60 * 1000,
-    },
-  );
-}
 
 async function getEmailTwoFactorAuthenticationCode(
   afterDate: Date,
@@ -123,7 +82,4 @@ async function getEmailTwoFactorAuthenticationCode(
   );
 }
 
-export {
-  getEmailTwoFactorAuthenticationCode,
-  getSMSTwoFactorAuthenticationCode,
-};
+export { getEmailTwoFactorAuthenticationCode };

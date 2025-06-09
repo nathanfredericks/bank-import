@@ -1,11 +1,11 @@
 import { parseISO, subDays } from "date-fns";
 import { z } from "zod";
-import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa.js";
-import axios from "../../utils/axios.js";
-import logger from "../../utils/logger.js";
-import { Bank } from "../Bank.js";
-import { BankName } from "../types.js";
-import { Account, ActivityResponse, UserResponse } from "./schemas.js";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import axios from "../../utils/axios";
+import logger from "../../utils/logger";
+import { Bank } from "../Bank";
+import { BankName } from "../types";
+import { Account, ActivityResponse, UserResponse } from "./schemas";
 
 export class RogersBank extends Bank {
   constructor() {

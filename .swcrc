@@ -1,0 +1,15 @@
+{
+  "$schema": "https://swc.rs/schema.json",
+  "jsc": {
+    "parser": {
+      "syntax": "typescript"
+    },
+    "target": "es2020",
+    "baseUrl": "./"
+  },
+  "module": {
+    "type": "es6",
+    "resolveFully": true
+  },
+  "minify": true
+}

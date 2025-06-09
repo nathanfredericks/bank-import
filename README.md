@@ -1,3 +1,3 @@
 # bank-import
 
-Import transactions from BMO, Tangerine, Manulife Bank and Rogers Bank to YNAB.
+Import account balances and transactions from BMO, Rogers Bank and NBDB to YNAB

@@ -1,6 +1,6 @@
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
-import env from "../../utils/env.js";
+import env from "../../utils/env";
 
 const AuthnResponse = z
   .object({
