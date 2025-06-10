@@ -32,6 +32,7 @@ try {
       }
       await importTransactions(rogersBankAccounts);
       logger.info("Imported transactions from Rogers Bank");
+      break;
     case BankName.NBDB:
       logger.info("Importing transactions from NBDB");
       const nbdb = await NBDB.create(
