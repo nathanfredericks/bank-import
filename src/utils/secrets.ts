@@ -26,16 +26,16 @@ const { SecretString } = await secretsManagerClient.send(
 );
 
 const Secrets = z.object({
-  BMO_CARD_NUMBER: z.string(),
-  BMO_PASSWORD: z.string(),
-  ROGERS_BANK_USERNAME: z.string(),
-  ROGERS_BANK_PASSWORD: z.string(),
-  NBDB_USER_ID: z.string(),
-  NBDB_PASSWORD: z.string(),
-  YNAB_ACCESS_TOKEN: z.string(),
-  JMAP_BEARER_TOKEN: z.string(),
-  PUSHOVER_TOKEN: z.string(),
-  PUSHOVER_USER: z.string(),
+  BMO_CARD_NUMBER: z.string().min(1),
+  BMO_PASSWORD: z.string().min(1),
+  ROGERS_BANK_USERNAME: z.string().min(1),
+  ROGERS_BANK_PASSWORD: z.string().min(1),
+  NBDB_USER_ID: z.string().min(1),
+  NBDB_PASSWORD: z.string().min(1),
+  YNAB_ACCESS_TOKEN: z.string().min(1),
+  JMAP_BEARER_TOKEN: z.string().min(1),
+  PUSHOVER_TOKEN: z.string().min(1),
+  PUSHOVER_USER: z.string().min(1),
 });
 
 const secretJson = JSON.parse(SecretString || "{}");
