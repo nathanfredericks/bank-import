@@ -4,7 +4,7 @@ import { BankName } from "../banks/types";
 
 const env = config({
   quiet: true,
-  ignore: ['MISSING_ENV_FILE']
+  ignore: ["MISSING_ENV_FILE"],
 });
 
 const Env = z.object({
