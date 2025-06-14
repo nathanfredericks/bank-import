@@ -17,6 +17,7 @@ const Env = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_DEFAULT_REGION: z.string().optional(),
+  AWS_S3_TRACES_BUCKET_NAME: z.string(),
   BANK: z.nativeEnum(BankName),
   AWS_S3_BUCKET_NAME: z.string().optional(),
   PROXY_SERVER: z.string().optional(),

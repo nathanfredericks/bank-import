@@ -18,13 +18,13 @@ const s3Client = new S3Client(config);
 
 async function uploadFile(key: string, contentType: string, body: any) {
   logger.debug(`Uploading file to S3 bucket: ${key}`);
-  if (!env.AWS_S3_BUCKET_NAME) {
+  if (!env.AWS_S3_TRACES_BUCKET_NAME) {
     throw new Error("No bucket name provided");
   }
 
   await s3Client.send(
     new PutObjectCommand({
-      Bucket: env.AWS_S3_BUCKET_NAME,
+      Bucket: env.AWS_S3_TRACES_BUCKET_NAME,
       Key: key,
       ContentType: contentType,
       Body: body,
