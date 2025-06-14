@@ -150,6 +150,9 @@ const CreditCardTransactionsResponse = z
   .object({
     GetCCAccountDetailsRs: z.object({
       BodyRs: z.object({
+        creditCardDetails: z.object({
+          statementDates: z.array(z.string().date()),
+        }),
         lendingTransactions: z.preprocess(
           (transactions: any) =>
             transactions.filter((transaction: any) => !!transaction.postDate),
@@ -161,9 +164,12 @@ const CreditCardTransactionsResponse = z
   .transform(
     ({
       GetCCAccountDetailsRs: {
-        BodyRs: { lendingTransactions },
+        BodyRs: { lendingTransactions, creditCardDetails },
       },
-    }) => lendingTransactions,
+    }) => ({
+      transactions: lendingTransactions,
+      statementDates: creditCardDetails.statementDates,
+    }),
   );
 
 export {
