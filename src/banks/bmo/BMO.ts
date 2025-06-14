@@ -59,58 +59,108 @@ export class BMO extends Bank {
   }
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
-    if (!["BANK_ACCOUNT", "CREDIT_CARD"].includes(account._type)) return [];
-
-    logger.debug(`Fetching transactions for account ${account.name}`);
-    const url =
-      account._type === "BANK_ACCOUNT"
-        ? "https://www1.bmo.com/banking/services/accountdetails/getBankAccountDetails"
-        : "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails";
-    const filters =
-      account._type === "BANK_ACCOUNT"
-        ? {
-            filterFromDate: formatISO(subDays(this.date, 10), {
-              representation: "date",
-            }),
-            filterToDate: formatISO(this.date, { representation: "date" }),
-          }
-        : {
-            filter: "unbilled",
-          };
-    const { data } = await axios.post(
-      url,
-      {
-        MySummaryRq: {
-          HdrRq: await this.generateRequestHeaders(),
-          BodyRq: {
-            accountIndex: account._index,
-            limitNoTxns: "1500",
-            ...filters,
+    if (account._type === "BANK_ACCOUNT") {
+      logger.debug(`Fetching transactions for account ${account.name}`);
+      const { data } = await axios.post(
+        "https://www1.bmo.com/banking/services/accountdetails/getBankAccountDetails",
+        {
+          MySummaryRq: {
+            HdrRq: await this.generateRequestHeaders(),
+            BodyRq: {
+              accountIndex: account._index,
+              limitNoTxns: "1500",
+              filterFromDate: formatISO(subDays(this.date, 10), {
+                representation: "date",
+              }),
+              filterToDate: formatISO(this.date, { representation: "date" }),
+            },
           },
         },
-      },
-      {
-        headers: {
-          "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
-          Cookie: await this.getCookiesAsString(),
+        {
+          headers: {
+            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+            Cookie: await this.getCookiesAsString(),
+          },
         },
-      },
-    );
-    let transactions =
-      account._type === "BANK_ACCOUNT"
-        ? BankAccountTransactionsResponse.parse(data)
-        : CreditCardTransactionsResponse.parse(data);
-    transactions = transactions
-      .filter(
-        (transaction) => parseISO(transaction.date) >= subDays(this.date, 10),
-      )
-      .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime());
-    logger.debug(
-      `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
-      transactions,
-    );
+      );
+      const transactions = BankAccountTransactionsResponse.parse(data);
+      return transactions
+        .filter(
+          (transaction) => parseISO(transaction.date) >= subDays(this.date, 10),
+        )
+        .sort(
+          (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime(),
+        );
+    } else if (account._type === "CREDIT_CARD") {
+      logger.debug(`Fetching transactions for account ${account.name}`);
+      const { data: unbilledTransactionsData } = await axios.post(
+        "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
+        {
+          MySummaryRq: {
+            HdrRq: await this.generateRequestHeaders(),
+            BodyRq: {
+              accountIndex: account._index,
+              limitNoTxns: "1500",
+              filter: "unbilled",
+            },
+          },
+        },
+        {
+          headers: {
+            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+            Cookie: await this.getCookiesAsString(),
+          },
+        },
+      );
 
-    return transactions;
+      const {
+        transactions: unbilledTransactions,
+        statementDates: previousStatementDates,
+      } = CreditCardTransactionsResponse.parse(unbilledTransactionsData);
+
+      let allTransactions = [...unbilledTransactions];
+
+      const previousStatementDate = previousStatementDates.sort().reverse()[0];
+
+      if (previousStatementDate) {
+        const { data: previousTransactionsData } = await axios.post(
+          "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
+          {
+            MySummaryRq: {
+              HdrRq: await this.generateRequestHeaders(),
+              BodyRq: {
+                accountIndex: account._index,
+                limitNoTxns: "1500",
+                filter: previousStatementDate,
+              },
+            },
+          },
+          {
+            headers: {
+              "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+              Cookie: await this.getCookiesAsString(),
+            },
+          },
+        );
+        const { transactions: previousTransactions } =
+          CreditCardTransactionsResponse.parse(previousTransactionsData);
+        allTransactions = [...allTransactions, ...previousTransactions];
+      }
+
+      const transactions = allTransactions
+        .filter(
+          (transaction) => parseISO(transaction.date) >= subDays(this.date, 10),
+        )
+        .sort(
+          (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime(),
+        );
+      logger.debug(
+        `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
+        transactions,
+      );
+      return transactions;
+    }
+    return [];
   }
 
   private async processAccounts(accounts: z.infer<typeof Account>[] | null) {

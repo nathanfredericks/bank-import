@@ -26,16 +26,32 @@ export class RogersBank extends Bank {
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
     logger.debug(`Fetching transactions for account ${account.name}`);
-    const { data } = await axios.get(
-      `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity`,
-      {
-        headers: {
-          Cookie: await this.getCookiesAsString(),
-        },
-      },
+    const [currentTransactionsResponse, previousTransactionsResponse] =
+      await Promise.all([
+        axios.get(
+          `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity`,
+          {
+            headers: {
+              Cookie: await this.getCookiesAsString(),
+            },
+          },
+        ),
+        axios.get(
+          `https://rbaccess.rogersbank.com/issuing/digital/account/${account._number}/customer/${account._customerId}/activity?cycleStartDate=${account._previousStatementDate}`,
+          {
+            headers: {
+              Cookie: await this.getCookiesAsString(),
+            },
+          },
+        ),
+      ]);
+    const currentTransactions = ActivityResponse.parse(
+      currentTransactionsResponse.data,
     );
-
-    let transactions = ActivityResponse.parse(data);
+    const previousTransactions = ActivityResponse.parse(
+      previousTransactionsResponse.data,
+    );
+    let transactions = [...currentTransactions, ...previousTransactions];
     transactions = transactions
       .filter((transaction) => {
         const date = parseISO(transaction.date);
