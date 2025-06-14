@@ -30,11 +30,9 @@ export class Bank {
         "--disable-blink-features=AutomationControlled",
       ],
     };
-    if (env.PROXY_SERVER && env.PROXY_USERNAME && env.PROXY_PASSWORD) {
+    if (env.HTTP_PROXY) {
       options.proxy = {
-        server: env.PROXY_SERVER,
-        username: env.PROXY_USERNAME,
-        password: env.PROXY_PASSWORD,
+        server: env.HTTP_PROXY,
       };
     }
     const browser = await chromium.launch(options);
