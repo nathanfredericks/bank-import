@@ -18,11 +18,8 @@ const Env = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_DEFAULT_REGION: z.string().optional(),
   AWS_S3_TRACES_BUCKET_NAME: z.string(),
+  HTTP_PROXY: z.string().optional(),
   BANK: z.nativeEnum(BankName),
-  AWS_S3_BUCKET_NAME: z.string().optional(),
-  PROXY_SERVER: z.string().optional(),
-  PROXY_USERNAME: z.string().optional(),
-  PROXY_PASSWORD: z.string().optional(),
 });
 
 export default Env.parse({
