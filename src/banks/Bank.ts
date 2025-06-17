@@ -60,8 +60,8 @@ export class Bank {
     await this.context?.tracing.stop({ path: filePath });
   }
 
-  protected async handleError(error: unknown) {
-    logger.error(error);
+  protected async handleError(error: Error) {
+    const errorMessage = error.stack?.split("\n")[0];
     const getTraceFilePath = (fileName: string) => `traces/${fileName}`;
     const getTraceFileName = () =>
       `${format(this.date, "yyyy-MM-dd")}-${this.bank}-${randomUUID()}.zip`;
@@ -71,14 +71,12 @@ export class Bank {
     logger.info(`Saved trace to ${traceFilePath}`);
     const traceFile = await readFile(traceFilePath);
     await uploadFile(traceFileName, "application/zip", traceFile);
-    await sendNotification(
-      `Error fetching accounts from ${bankNames[this.bank]}.`,
-      {
-        title: "Error Fetching Accounts",
-        url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
-        url_title: "Open AWS Console",
-      },
-    );
+    await sendNotification(errorMessage || null, {
+      title: `Error Logging Into ${bankNames[this.bank]}`,
+      url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
+      url_title: "Open AWS Console",
+      priority: -1,
+    });
   }
 
   protected async getCookies() {
