@@ -10,10 +10,7 @@ import { importTransactions, updateAccountBalances } from "./ynab";
 switch (env.BANK) {
   case BankName.BMO:
     logger.info("Importing transactions from BMO");
-    const bmo = await BMO.create(
-      secrets.BMO_CARD_NUMBER,
-      secrets.BMO_PASSWORD,
-    );
+    const bmo = await BMO.create(secrets.BMO_CARD_NUMBER, secrets.BMO_PASSWORD);
     const bmoAccounts = await bmo.getAccounts();
     await importTransactions(bmoAccounts);
     logger.info("Imported transactions from BMO");
@@ -33,10 +30,7 @@ switch (env.BANK) {
     break;
   case BankName.NBDB:
     logger.info("Importing transactions from NBDB");
-    const nbdb = await NBDB.create(
-      secrets.NBDB_USER_ID,
-      secrets.NBDB_PASSWORD,
-    );
+    const nbdb = await NBDB.create(secrets.NBDB_USER_ID, secrets.NBDB_PASSWORD);
     const nbdbAccounts = await nbdb.getAccounts();
     if (!nbdbAccounts.length) {
       throw new Error("Error fetching accounts from NBDB");

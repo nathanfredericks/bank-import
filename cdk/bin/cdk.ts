@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
@@ -48,6 +49,7 @@ const tracesBucket = new s3.Bucket(stack, "BankImportTracesBucket", {
   encryption: s3.BucketEncryption.S3_MANAGED,
   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
+  autoDeleteObjects: true,
   lifecycleRules: [
     {
       id: "DeleteAfter7Days",
@@ -62,7 +64,7 @@ const cluster = new ecs.Cluster(stack, "BankImportCluster", {
 });
 
 const logGroup = new logs.LogGroup(stack, "BankImportLogGroup", {
-  logGroupName: "/ecs/Bank",
+  logGroupName: "/ecs/BankImport",
   retention: logs.RetentionDays.ONE_WEEK,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
@@ -73,140 +75,149 @@ const bankImportSecret = secretsmanager.Secret.fromSecretCompleteArn(
   secretArn,
 );
 
-const taskDefinition = new ecs.FargateTaskDefinition(stack, "Bank", {
-  memoryLimitMiB: 2048,
-  cpu: 1024,
-  runtimePlatform: {
-    cpuArchitecture: ecs.CpuArchitecture.ARM64,
-    operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-  },
-});
-
-const tailscaleContainer = taskDefinition.addContainer("tailscale", {
-  image: ecs.ContainerImage.fromRegistry("tailscale/tailscale:latest"),
-  stopTimeout: cdk.Duration.minutes(2),
-  logging: ecs.LogDrivers.awsLogs({
-    streamPrefix: "ecs",
-    logGroup,
-    mode: ecs.AwsLogDriverMode.NON_BLOCKING,
-    maxBufferSize: cdk.Size.mebibytes(25),
-  }),
-  secrets: {
-    TS_AUTHKEY: ecs.Secret.fromSecretsManager(
-      bankImportSecret,
-      "TAILSCALE_AUTH_KEY",
-    ),
-  },
-  environment: {
-    TS_EXTRA_ARGS: `--advertise-tags=tag:container --exit-node=${tailscaleExitNode}`,
-    TS_OUTBOUND_HTTP_PROXY_LISTEN: ":1055",
-    TS_ENABLE_HEALTH_CHECK: "true",
-    TS_LOCAL_ADDR_PORT: "127.0.0.1:9002",
-  },
-  healthCheck: {
-    command: [
-      "CMD-SHELL",
-      "wget -q --spider http://127.0.0.1:9002/healthz || exit 1",
-    ],
-    interval: cdk.Duration.seconds(10),
-    retries: 5,
-    startPeriod: cdk.Duration.seconds(10),
-    timeout: cdk.Duration.seconds(5),
-  },
-});
-
-const bankImportContainer = taskDefinition.addContainer("bank-import", {
-  image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, "../.."), {
-    platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
-  }),
-  stopTimeout: cdk.Duration.minutes(2),
-  environment: {
-    TZ: timezone,
-    YNAB_BUDGET_ID: ynabBudgetId,
-    AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
-    AWS_SECRET_ARN: secretArn,
-    HTTP_PROXY: "http://localhost:1055",
-  },
-});
-
-bankImportContainer.addContainerDependencies({
-  container: tailscaleContainer,
-  condition: ecs.ContainerDependencyCondition.HEALTHY,
-});
-
-taskDefinition.addToTaskRolePolicy(
-  new iam.PolicyStatement({
-    effect: iam.Effect.ALLOW,
-    actions: ["s3:PutObject"],
-    resources: [tracesBucket.arnForObjects("*")],
-  }),
-);
-
-taskDefinition.addToTaskRolePolicy(
-  new iam.PolicyStatement({
-    effect: iam.Effect.ALLOW,
-    actions: ["secretsmanager:GetSecretValue"],
-    resources: [secretArn],
-  }),
-);
-
-taskDefinition.addToTaskRolePolicy(
-  new iam.PolicyStatement({
-    effect: iam.Effect.ALLOW,
-    actions: ["ssm:GetParameter"],
-    resources: [
-      `arn:aws:ssm:${stack.region}:${stack.account}:parameter/bank-import/*`,
-    ],
-  }),
-);
-
 const taskSecurityGroup = new ec2.SecurityGroup(
   stack,
-  "BankTaskSecurityGroup",
+  "BankImportTaskSecurityGroup",
   {
     vpc,
     allowAllOutbound: true,
   },
 );
 
-const schedulerRole = new iam.Role(stack, "BankImportSchedulerExecutionRole", {
-  assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
-  inlinePolicies: {
-    ECSTaskExecution: new iam.PolicyDocument({
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["ecs:RunTask", "ecs:TagResource"],
-          resources: [
-            taskDefinition.taskDefinitionArn,
-            `arn:aws:ecs:${stack.region}:${stack.account}:task/${cluster.clusterName}/*`,
-          ],
-        }),
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["iam:PassRole"],
-          resources: [
-            taskDefinition.taskRole.roleArn,
-            taskDefinition.executionRole!.roleArn,
-          ],
-        }),
-      ],
-    }),
-  },
-});
-
 function createBankSchedule(
   id: string,
   bankName: string,
   scheduleExpression: string,
-  timezone: string,
-): scheduler.CfnSchedule {
-  return new scheduler.CfnSchedule(stack, id, {
+  scheduleTimezone: string,
+) {
+  const taskDefinition = new ecs.FargateTaskDefinition(
+    stack,
+    `BankImportTaskDefinition-${bankName}`,
+    {
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      runtimePlatform: {
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+      },
+    },
+  );
+
+  const tailscaleContainer = taskDefinition.addContainer("tailscale", {
+    image: ecs.ContainerImage.fromRegistry("tailscale/tailscale:latest"),
+    stopTimeout: cdk.Duration.minutes(2),
+    secrets: {
+      TS_AUTHKEY: ecs.Secret.fromSecretsManager(
+        bankImportSecret,
+        "TAILSCALE_AUTH_KEY",
+      ),
+    },
+    environment: {
+      TS_EXTRA_ARGS: `--advertise-tags=tag:container --exit-node=${tailscaleExitNode}`,
+      TS_OUTBOUND_HTTP_PROXY_LISTEN: ":1055",
+      TS_ENABLE_HEALTH_CHECK: "true",
+      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002",
+    },
+    healthCheck: {
+      command: [
+        "CMD-SHELL",
+        "wget -q --spider http://127.0.0.1:9002/healthz || exit 1",
+      ],
+      interval: cdk.Duration.seconds(10),
+      retries: 5,
+      startPeriod: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(5),
+    },
+  });
+
+  const bankImportContainer = taskDefinition.addContainer("bank-import", {
+    image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, "../.."), {
+      platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
+    }),
+    stopTimeout: cdk.Duration.minutes(2),
+    environment: {
+      BANK: id,
+      TZ: timezone,
+      YNAB_BUDGET_ID: ynabBudgetId,
+      AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
+      AWS_SECRET_ARN: secretArn,
+      HTTP_PROXY: "http://localhost:1055",
+    },
+    logging: ecs.LogDrivers.awsLogs({
+      streamPrefix: id,
+      logGroup,
+      mode: ecs.AwsLogDriverMode.NON_BLOCKING,
+      maxBufferSize: cdk.Size.mebibytes(25),
+    }),
+  });
+
+  bankImportContainer.addContainerDependencies({
+    container: tailscaleContainer,
+    condition: ecs.ContainerDependencyCondition.HEALTHY,
+  });
+
+  taskDefinition.addToTaskRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["s3:PutObject"],
+      resources: [tracesBucket.arnForObjects("*")],
+    }),
+  );
+
+  taskDefinition.addToTaskRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["secretsmanager:GetSecretValue"],
+      resources: [secretArn],
+    }),
+  );
+
+  taskDefinition.addToTaskRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["ssm:GetParameter"],
+      resources: [
+        `arn:aws:ssm:${stack.region}:${stack.account}:parameter/bank-import/*`,
+      ],
+    }),
+  );
+
+  const schedulerRole = new iam.Role(
+    stack,
+    `BankImportSchedulerExecutionRole-${bankName}`,
+    {
+      assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
+      inlinePolicies: {
+        ECSTaskExecution: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: ["ecs:RunTask"],
+              resources: [
+                taskDefinition.taskDefinitionArn,
+                `arn:aws:ecs:${stack.region}:${stack.account}:task/${cluster.clusterName}/*`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: ["iam:PassRole"],
+              resources: [
+                taskDefinition.taskRole.roleArn,
+                taskDefinition.executionRole!.roleArn,
+              ],
+            }),
+          ],
+        }),
+      },
+    },
+  );
+
+  new scheduler.CfnSchedule(stack, `BankImportSchedule-${bankName}`, {
     flexibleTimeWindow: {
       mode: "OFF",
     },
     scheduleExpression,
-    scheduleExpressionTimezone: timezone,
+    scheduleExpressionTimezone: scheduleTimezone,
     target: {
       arn: cluster.clusterArn,
       roleArn: schedulerRole.roleArn,
@@ -221,40 +232,22 @@ function createBankSchedule(
           },
         },
       },
-      input: JSON.stringify({
-        containerOverrides: [
-          {
-            name: "bank-import",
-            environment: [
-              {
-                name: "BANK",
-                value: bankName,
-              },
-            ],
-          },
-        ],
-      }),
     },
   });
 }
 
-createBankSchedule(
-  "BankImportBMOSchedule",
-  "bmo",
-  "cron(0 0/4 * * ? *)",
-  timezone,
-);
+createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
 
 createBankSchedule(
-  "BankImportRogersBankSchedule",
   "rogers-bank",
+  "RogersBank",
   "cron(0 0/4 * * ? *)",
   timezone,
 );
 
 createBankSchedule(
-  "BankImportNBDBSchedule",
   "nbdb",
+  "NBDB",
   "cron(0 16 ? * MON-FRI *)",
   "America/New_York",
 );

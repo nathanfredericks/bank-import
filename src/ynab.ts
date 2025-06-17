@@ -87,7 +87,10 @@ export async function importTransactions(accounts: z.infer<typeof Account>[]) {
       { transactions: transactionsToImport },
     );
     const { transactions: imported } = response.data;
-    logger.info(`Imported ${imported?.length} transaction(s) to YNAB`, imported);
+    logger.info(
+      `Imported ${imported?.length} transaction(s) to YNAB`,
+      imported,
+    );
   } catch (error) {
     logger.error("Error importing transactions to YNAB", error);
   }

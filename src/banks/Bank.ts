@@ -61,6 +61,7 @@ export class Bank {
   }
 
   protected async handleError(error: Error) {
+    logger.error(error);
     const errorMessage = error.stack?.split("\n")[0];
     const getTraceFilePath = (fileName: string) => `traces/${fileName}`;
     const getTraceFileName = () =>
