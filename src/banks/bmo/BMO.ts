@@ -28,7 +28,11 @@ export class BMO extends Bank {
       await bmo.login(cardNumber, password);
       await bmo.closeBrowser();
     } catch (error) {
-      await bmo.handleError(error);
+      if (error instanceof Error) {
+        await bmo.handleError(error);
+      } else {
+        throw error;
+      }
     }
     return bmo;
   }
@@ -83,14 +87,19 @@ export class BMO extends Bank {
           },
         },
       );
-      const transactions = BankAccountTransactionsResponse.parse(data);
-      return transactions
+      let transactions = BankAccountTransactionsResponse.parse(data);
+      transactions = transactions
         .filter(
           (transaction) => parseISO(transaction.date) >= subDays(this.date, 10),
         )
         .sort(
           (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime(),
         );
+      logger.info(
+        `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
+        transactions,
+      );
+      return transactions;
     } else if (account._type === "CREDIT_CARD") {
       logger.debug(`Fetching transactions for account ${account.name}`);
       const { data: unbilledTransactionsData } = await axios.post(
@@ -154,7 +163,7 @@ export class BMO extends Bank {
         .sort(
           (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime(),
         );
-      logger.debug(
+      logger.info(
         `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
         transactions,
       );

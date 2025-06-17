@@ -120,15 +120,8 @@ const bankImportContainer = taskDefinition.addContainer("bank-import", {
     platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
   }),
   stopTimeout: cdk.Duration.minutes(2),
-  logging: ecs.LogDrivers.awsLogs({
-    streamPrefix: "ecs",
-    logGroup,
-    mode: ecs.AwsLogDriverMode.NON_BLOCKING,
-    maxBufferSize: cdk.Size.mebibytes(25),
-  }),
   environment: {
     TZ: timezone,
-    DEBUG: "true",
     YNAB_BUDGET_ID: ynabBudgetId,
     AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
     AWS_SECRET_ARN: secretArn,

@@ -16,7 +16,11 @@ export class NBDB extends Bank {
       await nbdb.login(userID, password);
       await nbdb.closeBrowser();
     } catch (error) {
-      await nbdb.handleError(error);
+      if (error instanceof Error) {
+        await nbdb.handleError(error);
+      } else {
+        throw error;
+      }
     }
     return nbdb;
   }

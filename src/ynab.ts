@@ -9,7 +9,7 @@ import secrets from "./utils/secrets";
 const ynabAPI = new ynab.API(secrets.YNAB_ACCESS_TOKEN);
 
 export async function importTransactions(accounts: z.infer<typeof Account>[]) {
-  logger.debug("Importing transactions to YNAB");
+  logger.info("Importing transactions to YNAB");
 
   logger.debug("Fetching YNAB accounts");
   const ynabAccounts = await ynabAPI.accounts
@@ -23,7 +23,7 @@ export async function importTransactions(accounts: z.infer<typeof Account>[]) {
       (account) => account.transactions && account.transactions.length,
     )
   ) {
-    logger.debug("Imported 0 transaction(s)");
+    logger.info("Imported 0 transaction(s) to YNAB");
     return;
   }
 
@@ -41,6 +41,9 @@ export async function importTransactions(accounts: z.infer<typeof Account>[]) {
       const matchedYnabAccount = findYnabAccount(account);
 
       if (!matchedYnabAccount) {
+        logger.info(
+          `Error matching YNAB account for bank account ${account.id} (${account.name})`,
+        );
         return [];
       }
 
@@ -74,17 +77,20 @@ export async function importTransactions(accounts: z.infer<typeof Account>[]) {
     });
 
   if (!transactionsToImport.length) {
-    logger.debug("Imported 0 transaction(s)");
+    logger.info("Imported 0 transaction(s) to YNAB");
     return;
   }
 
-  const response = await ynabAPI.transactions.createTransactions(
-    env.YNAB_BUDGET_ID,
-    { transactions: transactionsToImport },
-  );
-
-  const { transactions: imported } = response.data;
-  logger.debug(`Imported ${imported?.length} transaction(s)`, imported);
+  try {
+    const response = await ynabAPI.transactions.createTransactions(
+      env.YNAB_BUDGET_ID,
+      { transactions: transactionsToImport },
+    );
+    const { transactions: imported } = response.data;
+    logger.info(`Imported ${imported?.length} transaction(s) to YNAB`, imported);
+  } catch (error) {
+    logger.error("Error importing transactions to YNAB", error);
+  }
 }
 
 export async function updateAccountBalances(
@@ -114,9 +120,7 @@ export async function updateAccountBalances(
     const matchedYnabAccount = findYnabAccount(account);
 
     if (!matchedYnabAccount) {
-      logger.debug(
-        `No matching YNAB account found for bank account ${account.id}`,
-      );
+      logger.debug(`No YNAB account matched for bank account ${account.id}`);
       continue;
     }
 

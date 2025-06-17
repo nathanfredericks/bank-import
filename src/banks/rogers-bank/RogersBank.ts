@@ -19,7 +19,11 @@ export class RogersBank extends Bank {
       await rogersBank.login(username, password);
       await rogersBank.closeBrowser();
     } catch (error) {
-      await rogersBank.handleError(error);
+      if (error instanceof Error) {
+        await rogersBank.handleError(error);
+      } else {
+        throw error;
+      }
     }
     return rogersBank;
   }
@@ -58,7 +62,7 @@ export class RogersBank extends Bank {
         return date >= subDays(this.date, 10) && date <= this.date;
       })
       .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime());
-    logger.debug(
+    logger.info(
       `Fetched ${transactions.length} transaction(s) for account ${account.name}`,
       transactions,
     );
