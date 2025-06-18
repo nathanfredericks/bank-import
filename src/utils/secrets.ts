@@ -35,7 +35,8 @@ const Secrets = z.object({
   PUSHOVER_TOKEN: z.string(),
   PUSHOVER_USER: z.string(),
   YNAB_ACCESS_TOKEN: z.string(),
-  JMAP_BEARER_TOKEN: z.string(),
+  GOOGLE_SERVICE_ACCOUNT_KEY: z.string(),
+  GMAIL_USER: z.string(),
 });
 
 const secretJson = JSON.parse(SecretString || "{}");
