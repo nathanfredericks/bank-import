@@ -115,11 +115,12 @@ export class RogersBank extends Bank {
       logger.debug("Filling in two-factor authentication code");
       await page.getByRole("radio", { name: "@" }).click();
       await page.getByRole("button", { name: "Send code" }).click();
-      const code = await getEmailTwoFactorAuthenticationCode(
-        this.date,
-        "onlineservices@RogersBank.com",
-        "Your verification code",
-      );
+      const code = await getEmailTwoFactorAuthenticationCode({
+        afterDate: this.date,
+        sender: "onlineservices@RogersBank.com",
+        subject: "Your verification code",
+        regex: /\b\d{8}\b/,
+      });
       await page.getByRole("button", { name: "OK" }).click();
       await page.getByRole("textbox", { name: "One-time passcode" }).fill(code);
       await page.getByRole("button", { name: "Continue" }).click();

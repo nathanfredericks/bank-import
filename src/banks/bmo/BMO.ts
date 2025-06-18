@@ -221,11 +221,11 @@ export class BMO extends Bank {
         })
         .click();
       await page.getByRole("button", { name: "Send code" }).click();
-      const code = await getEmailTwoFactorAuthenticationCode(
-        this.date,
-        "bmoalerts@bmo.com",
-        "BMO Verification Code",
-      );
+      const code = await getEmailTwoFactorAuthenticationCode({
+        afterDate: this.date,
+        sender: "bmoalerts@bmo.com",
+        subject: "BMO Verification Code",
+      });
       await page.getByRole("textbox", { name: "Verification code" }).fill(code);
       await page.getByRole("button", { name: "Confirm" }).click();
 

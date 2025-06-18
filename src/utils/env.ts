@@ -12,7 +12,6 @@ const Env = z.object({
   DEBUG: z.coerce.boolean().default(false),
   UUID_NAMESPACE: z.string().default("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
   YNAB_BUDGET_ID: z.string().default("last-used"),
-  JMAP_SESSION_URL: z.string().default("https://api.fastmail.com/jmap/session"),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_DEFAULT_REGION: z.string().optional(),

@@ -54,11 +54,11 @@ export class NBDB extends Bank {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
       await page.getByRole("link", { name: "Email" }).click();
-      const code = await getEmailTwoFactorAuthenticationCode(
-        this.date,
-        "noreply@appbnc.ca",
-        "Here's your verification code",
-      );
+      const code = await getEmailTwoFactorAuthenticationCode({
+        afterDate: this.date,
+        sender: "noreply@appbnc.ca",
+        subject: "Here's your verification code",
+      });
       await page.getByRole("textbox", { name: "Verification code" }).fill(code);
       await page.getByRole("button", { name: "Confirm" }).click();
     }
