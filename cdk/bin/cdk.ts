@@ -19,6 +19,11 @@ const tracesBucketName = ssm.StringParameter.valueForStringParameter(
   "/bank-import/traces-bucket-name",
 );
 
+const userDataBucketName = ssm.StringParameter.valueForStringParameter(
+  stack,
+  "/bank-import/user-data-bucket-name",
+);
+
 const timezone = ssm.StringParameter.valueForStringParameter(
   stack,
   "/bank-import/timezone",
@@ -57,6 +62,15 @@ const tracesBucket = new s3.Bucket(stack, "BankImportTracesBucket", {
       expiration: cdk.Duration.days(7),
     },
   ],
+});
+
+const userDataBucket = new s3.Bucket(stack, "BankImportUserDataBucket", {
+  bucketName: userDataBucketName,
+  versioned: false,
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+  autoDeleteObjects: true,
 });
 
 const cluster = new ecs.Cluster(stack, "BankImportCluster", {
@@ -140,6 +154,7 @@ function createBankSchedule(
       TZ: timezone,
       YNAB_BUDGET_ID: ynabBudgetId,
       AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
+      AWS_S3_USER_DATA_BUCKET_NAME: userDataBucket.bucketName,
       AWS_SECRET_ARN: secretArn,
       // HTTP_PROXY: "http://localhost:1055",
     },
@@ -161,6 +176,19 @@ function createBankSchedule(
       effect: iam.Effect.ALLOW,
       actions: ["s3:PutObject"],
       resources: [tracesBucket.arnForObjects("*")],
+    }),
+  );
+
+  taskDefinition.addToTaskRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+      ],
+      resources: [userDataBucket.bucketArn, userDataBucket.arnForObjects("*")],
     }),
   );
 
