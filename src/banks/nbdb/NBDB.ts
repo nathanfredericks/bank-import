@@ -25,19 +25,45 @@ export class NBDB extends Bank {
     return nbdb;
   }
 
-  private async login(userID: string, password: string) {
+  private async fillUserIDAndPassword(userID: string, password: string) {
     const page = await this.getPage();
-    logger.debug("Navigating to NBDB login page");
-    await page.goto("https://client.bnc.ca/nbdb/login");
-
-    logger.debug("Accepting cookies");
-    await page.getByText("Accept").click();
-
     logger.debug("Filling in user ID and password");
     await page
       .getByRole("textbox", { name: "User ID" })
       .pressSequentially(userID);
     await page.getByRole("textbox", { name: "Password" }).fill(password);
+    await page.getByRole("checkbox", { name: "Remember me" }).click();
+  }
+
+  private async fillPassword(password: string) {
+    const page = await this.getPage();
+    logger.debug("Filling in password");
+    await page
+      .getByRole("textbox", { name: "Enter your password" })
+      .fill(password);
+  }
+
+  private async login(userID: string, password: string) {
+    const page = await this.getPage();
+    logger.debug("Navigating to NBDB login page");
+    await page.goto("https://client.bnc.ca/nbdb/login");
+
+    try {
+      logger.debug("Accepting cookies");
+      await page.getByText("Accept").click({
+        timeout: 3000,
+      });
+    } catch {}
+
+    const userIDTextbox = page.getByRole("textbox", {
+      name: "Enter your user ID",
+    });
+    if (await userIDTextbox.isVisible()) {
+      await this.fillUserIDAndPassword(userID, password);
+    } else {
+      await this.fillPassword(password);
+    }
+
     await page.getByRole("button", { name: "Sign in" }).click();
 
     logger.debug("Waiting for response");

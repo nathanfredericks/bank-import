@@ -87,7 +87,7 @@ async function getEmailTwoFactorAuthenticationCode({
 
       if (!messageList.data.messages?.length) {
         logger.debug("No emails found, retrying...");
-        await new Promise(resolve => setTimeout(resolve, retryInterval));
+        await new Promise((resolve) => setTimeout(resolve, retryInterval));
         continue;
       }
 
@@ -103,7 +103,7 @@ async function getEmailTwoFactorAuthenticationCode({
 
         const emailDate = Number(messageDetails.data.internalDate);
         const currentTime = Date.now();
-        
+
         if (emailDate < afterDate.getTime()) {
           continue;
         }
@@ -121,7 +121,7 @@ async function getEmailTwoFactorAuthenticationCode({
         const code = text.match(regex)?.[0];
         if (code) {
           logger.debug("Found 2FA code, deleting email");
-          
+
           try {
             await gmailClient.users.messages.delete({
               userId: "me",
@@ -131,23 +131,23 @@ async function getEmailTwoFactorAuthenticationCode({
           } catch (deleteError) {
             logger.error("Failed to delete email", deleteError);
           }
-          
+
           return code;
         }
       }
 
       logger.debug("2FA code not found in current emails, retrying...");
-      await new Promise(resolve => setTimeout(resolve, retryInterval));
+      await new Promise((resolve) => setTimeout(resolve, retryInterval));
     } catch (error) {
       if (error instanceof GaxiosError) {
         logger.error("Error fetching emails", error.response?.data);
       }
-      
+
       if (Date.now() - startTime > maxRetryTime - retryInterval) {
         throw error;
       }
-      
-      await new Promise(resolve => setTimeout(resolve, retryInterval));
+
+      await new Promise((resolve) => setTimeout(resolve, retryInterval));
     }
   }
 

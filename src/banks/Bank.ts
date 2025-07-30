@@ -1,12 +1,15 @@
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
+import * as tar from "tar";
 import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { sendNotification } from "../utils/pushover";
-import { uploadFile } from "../utils/s3";
+import { downloadFile, uploadFile } from "../utils/s3";
 import { Account, BankName, bankNames } from "./types";
 
 export class Bank {
@@ -15,12 +18,39 @@ export class Bank {
   private page: Page | null = null;
   protected date = new Date();
   private accounts: z.infer<typeof Account>[] = [];
+  private userDataDir: string | null = null;
 
   constructor(bank: BankName) {
     this.bank = bank;
   }
 
   protected async launchBrowser() {
+    this.userDataDir = await mkdtemp(join(tmpdir(), `user-data-`));
+    logger.debug(`Created temporary user data directory: ${this.userDataDir}`);
+    const archiveDir = await mkdtemp(join(tmpdir(), `archive-`));
+    logger.debug(`Created temporary archive directory: ${archiveDir}`);
+    const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
+
+    try {
+      await downloadFile(
+        env.AWS_S3_USER_DATA_BUCKET_NAME,
+        `${this.bank}.tar.gz`,
+        archivePath,
+      );
+      logger.debug(
+        `Extracting user data from ${archivePath} to ${this.userDataDir}`,
+      );
+      await tar.x({
+        file: archivePath,
+        cwd: this.userDataDir,
+      });
+      logger.debug(
+        `Successfully downloaded and extracted user data for ${this.bank}`,
+      );
+    } catch {
+      logger.debug(`No existing user data found for ${this.bank}`);
+    }
+
     logger.debug("Launching browser");
     const options: LaunchOptions = {
       headless: false,
@@ -35,9 +65,10 @@ export class Bank {
         server: env.HTTP_PROXY,
       };
     }
-    const browser = await chromium.launch(options);
-    logger.debug("Creating new context");
-    this.context = await browser.newContext();
+    this.context = await chromium.launchPersistentContext(
+      this.userDataDir,
+      options,
+    );
     await this.startTracing();
     logger.debug("Creating new page");
     this.page = await this.context.newPage();
@@ -48,6 +79,35 @@ export class Bank {
     logger.debug("Closing browser");
     await this.page?.context().browser()?.close();
     this.page = null;
+
+    if (this.userDataDir && !tracingFilePath) {
+      try {
+        const archiveDir = await mkdtemp(join(tmpdir(), "archive-"));
+        logger.debug(`Created temporary archive directory: ${archiveDir}`);
+        const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
+        logger.debug(`Creating user data archive at ${archivePath}`);
+        await tar.c(
+          {
+            gzip: true,
+            file: archivePath,
+            cwd: this.userDataDir,
+          },
+          ["."],
+        );
+        const archiveBuffer = await readFile(archivePath);
+        await uploadFile(
+          env.AWS_S3_USER_DATA_BUCKET_NAME,
+          `${this.bank}.tar.gz`,
+          "application/gzip",
+          archiveBuffer,
+        );
+        logger.debug(`Successfully uploaded user data for ${this.bank}.`);
+      } catch (error) {
+        logger.error(
+          `Failed to archive and upload user data directory for ${this.bank}: ${error}`,
+        );
+      }
+    }
   }
 
   protected async startTracing() {
@@ -71,7 +131,12 @@ export class Bank {
     await this.closeBrowser(traceFilePath);
     logger.info(`Saved trace to ${traceFilePath}`);
     const traceFile = await readFile(traceFilePath);
-    await uploadFile(traceFileName, "application/zip", traceFile);
+    await uploadFile(
+      env.AWS_S3_TRACES_BUCKET_NAME,
+      traceFileName,
+      "application/zip",
+      traceFile,
+    );
     await sendNotification(errorMessage || null, {
       title: `Error Logging Into ${bankNames[this.bank]}`,
       url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
