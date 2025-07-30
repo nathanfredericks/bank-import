@@ -71,6 +71,14 @@ const userDataBucket = new s3.Bucket(stack, "BankImportUserDataBucket", {
   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
   autoDeleteObjects: true,
+  lifecycleRules: [
+    {
+      id: "DeleteAfter1Day",
+      enabled: true,
+      expiration: cdk.Duration.days(1),
+      objectSizeGreaterThan: 536870912 // 512 MiB
+    },
+  ],
 });
 
 const cluster = new ecs.Cluster(stack, "BankImportCluster", {
