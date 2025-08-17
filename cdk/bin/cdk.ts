@@ -76,7 +76,7 @@ const userDataBucket = new s3.Bucket(stack, "BankImportUserDataBucket", {
       id: "DeleteAfter1Day",
       enabled: true,
       expiration: cdk.Duration.days(1),
-      objectSizeLessThan: 536870912 // 512 MiB
+      objectSizeGreaterThan: 536870912 // 512 MiB
     },
   ],
 });
