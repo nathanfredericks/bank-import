@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.53.0-noble AS base
+FROM mcr.microsoft.com/playwright:v1.55.0-noble AS base
 WORKDIR /usr/src/app
 
 FROM base AS install
