@@ -24,31 +24,36 @@ export class Bank {
     this.bank = bank;
   }
 
-  protected async launchBrowser() {
+  protected async launchBrowser(skipUserDataDownload = false) {
     this.userDataDir = await mkdtemp(join(tmpdir(), `user-data-`));
     logger.debug(`Created temporary user data directory: ${this.userDataDir}`);
-    const archiveDir = await mkdtemp(join(tmpdir(), `archive-`));
-    logger.debug(`Created temporary archive directory: ${archiveDir}`);
-    const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
 
-    try {
-      await downloadFile(
-        env.AWS_S3_USER_DATA_BUCKET_NAME,
-        `${this.bank}.tar.gz`,
-        archivePath,
-      );
-      logger.debug(
-        `Extracting user data from ${archivePath} to ${this.userDataDir}`,
-      );
-      await tar.x({
-        file: archivePath,
-        cwd: this.userDataDir,
-      });
-      logger.debug(
-        `Successfully downloaded and extracted user data for ${this.bank}`,
-      );
-    } catch {
-      logger.debug(`No existing user data found for ${this.bank}`);
+    if (!skipUserDataDownload) {
+      const archiveDir = await mkdtemp(join(tmpdir(), `archive-`));
+      logger.debug(`Created temporary archive directory: ${archiveDir}`);
+      const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
+
+      try {
+        await downloadFile(
+          env.AWS_S3_USER_DATA_BUCKET_NAME,
+          `${this.bank}.tar.gz`,
+          archivePath,
+        );
+        logger.debug(
+          `Extracting user data from ${archivePath} to ${this.userDataDir}`,
+        );
+        await tar.x({
+          file: archivePath,
+          cwd: this.userDataDir,
+        });
+        logger.debug(
+          `Successfully downloaded and extracted user data for ${this.bank}`,
+        );
+      } catch {
+        logger.debug(`No existing user data found for ${this.bank}`);
+      }
+    } else {
+      logger.debug(`Skipping user data download for ${this.bank}`);
     }
 
     logger.debug("Launching browser");
@@ -74,13 +79,16 @@ export class Bank {
     this.page = await this.context.newPage();
   }
 
-  protected async closeBrowser(tracingFilePath?: string) {
+  protected async closeBrowser(
+    tracingFilePath?: string,
+    skipUserDataDownload = false,
+  ) {
     await this.stopTracing(tracingFilePath);
     logger.debug("Closing browser");
     await this.page?.context().browser()?.close();
     this.page = null;
 
-    if (this.userDataDir && !tracingFilePath) {
+    if (this.userDataDir && !tracingFilePath && !skipUserDataDownload) {
       try {
         const archiveDir = await mkdtemp(join(tmpdir(), "archive-"));
         logger.debug(`Created temporary archive directory: ${archiveDir}`);
@@ -107,6 +115,8 @@ export class Bank {
           `Failed to archive and upload user data directory for ${this.bank}: ${error}`,
         );
       }
+    } else if (this.userDataDir && !tracingFilePath && skipUserDataDownload) {
+      logger.debug(`Skipping user data upload for ${this.bank}`);
     }
   }
 
