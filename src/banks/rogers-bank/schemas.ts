@@ -2,32 +2,42 @@ import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 import env from "../../utils/env";
 
-const Account = z
-  .object({
-    accountId: z.string(),
-    productName: z.string(),
-    currentBalance: z.object({
-      value: z.coerce.number(),
-    }),
-    customer: z.object({
-      customerId: z.string(),
-    }),
-    previousStatementDate: z.string().optional(),
-  })
-  .transform((data) => ({
-    id: uuidv5(data.accountId, env.UUID_NAMESPACE),
-    name: `${data.productName} (${data.accountId})`,
-    balance: data.currentBalance.value * -1,
-    _number: data.accountId,
-    _customerId: data.customer.customerId,
-    _previousStatementDate: data.previousStatementDate,
-  }));
-
 const UserResponse = z
   .object({
-    accounts: z.array(Account),
+    authenticateResponse: z.object({
+      accountId: z.string(),
+      customerId: z.string(),
+    }),
   })
-  .transform(({ accounts }) => accounts);
+  .transform(({ authenticateResponse }) => authenticateResponse);
+
+const ValidateCodeResponse = z
+  .object({
+    validateCodeResponse: z.object({
+      accountId: z.string(),
+      customerId: z.string(),
+    }),
+  })
+  .transform(({ validateCodeResponse }) => validateCodeResponse);
+
+const AccountResponse = z
+  .object({
+    accountDetail: z.object({
+      accountId: z.string(),
+      productName: z.string(),
+      currentBalance: z.object({
+        value: z.coerce.number(),
+      }),
+      customer: z.object({
+        cardLast4: z.string(),
+      }),
+    }),
+  })
+  .transform(({ accountDetail: data }) => ({
+    id: uuidv5(data.accountId, env.UUID_NAMESPACE),
+    name: `${data.productName} (************${data.customer.cardLast4})`,
+    balance: data.currentBalance.value * -1,
+  }));
 
 const Transaction = z
   .object({
@@ -44,21 +54,26 @@ const Transaction = z
     const amount = transaction.amount.value * -1;
     return {
       date: amount > 0 ? transaction.postedDate : transaction.date,
-      amount: amount,
+      amount,
       description: transaction.merchant.name,
     };
   });
 
-const ActivityResponse = z
+const TransactionsResponse = z
   .object({
-    activities: z.preprocess(
-      (transactions: any) =>
-        Array.isArray(transactions)
-          ? transactions.filter((transaction: any) => !!transaction.postedDate)
-          : [],
-      z.array(Transaction),
-    ),
+    activitySummary: z.object({
+      activities: z.preprocess(
+        (transactions: any) =>
+          transactions.filter((transaction: any) => !!transaction.postedDate),
+        z.array(Transaction),
+      ),
+    }),
   })
-  .transform(({ activities }) => activities);
+  .transform(({ activitySummary }) => activitySummary.activities);
 
-export { Account, ActivityResponse, UserResponse };
+export {
+  AccountResponse,
+  TransactionsResponse,
+  UserResponse,
+  ValidateCodeResponse,
+};

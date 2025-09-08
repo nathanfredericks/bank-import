@@ -2,11 +2,7 @@
   "app": "npx ts-node --prefer-ts-exts bin/cdk.ts",
   "watch": {
     "include": ["**"],
-    "exclude": [
-      "cdk*.json",
-      "package*.json",
-      "node_modules"
-    ]
+    "exclude": ["cdk*.json", "package*.json", "node_modules"]
   },
   "context": {
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
