@@ -1,12 +1,11 @@
 import winston from "winston";
-import env from "./env";
 
 const logger = winston.createLogger({
-  level: env.DEBUG ? "debug" : "info",
+  level: "debug",
   format: winston.format.combine(
     winston.format.errors({ stack: true }),
     winston.format.splat(),
-    winston.format.simple(),
+    winston.format.json(),
   ),
   transports: [new winston.transports.Console()],
 });

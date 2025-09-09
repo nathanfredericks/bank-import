@@ -164,7 +164,6 @@ function createBankSchedule(
       AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
       AWS_S3_USER_DATA_BUCKET_NAME: userDataBucket.bucketName,
       AWS_SECRET_ARN: secretArn,
-      DEBUG: "true",
       // HTTP_PROXY: "http://localhost:1055",
     },
     logging: ecs.LogDrivers.awsLogs({
