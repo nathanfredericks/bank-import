@@ -9,32 +9,32 @@
     "fix": "prettier . --write"
   },
   "devDependencies": {
-    "@swc/cli": "^0.7.7",
-    "@swc/core": "^1.13.3",
+    "@swc/cli": "^0.7.8",
+    "@swc/core": "^1.13.5",
     "@types/html-to-text": "^9.0.4",
-    "@types/node": "^22.15.30",
+    "@types/node": "^24.3.1",
     "@types/uuid": "^10.0.0",
-    "prettier": "^3.5.3",
+    "prettier": "^3.6.2",
     "prettier-plugin-organize-imports": "^4.2.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.2"
   },
   "private": true,
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.826.0",
-    "@aws-sdk/client-secrets-manager": "^3.826.0",
-    "@date-fns/tz": "^1.2.0",
-    "@dotenvx/dotenvx": "^1.48.4",
+    "@aws-sdk/client-s3": "^3.884.0",
+    "@aws-sdk/client-secrets-manager": "^3.883.0",
+    "@date-fns/tz": "^1.4.1",
+    "@dotenvx/dotenvx": "^1.49.0",
     "@types/tar": "^6.1.13",
     "axios": "^1.11.0",
     "date-fns": "^4.1.0",
-    "googleapis": "^150.0.1",
+    "googleapis": "^159.0.0",
     "html-to-text": "^9.0.5",
     "playwright": "1.53.0",
     "tar": "^7.4.3",
-    "uuid": "^10.0.0",
+    "uuid": "^13.0.0",
     "winston": "^3.17.0",
-    "ynab": "^2.9.0",
-    "zod": "^4.0.13"
+    "ynab": "^2.10.0",
+    "zod": "^4.1.5"
   },
   "type": "module"
 }
