@@ -29,7 +29,7 @@
     "date-fns": "^4.1.0",
     "googleapis": "^150.0.1",
     "html-to-text": "^9.0.5",
-    "playwright": "1.53.0",
+    "playwright": "1.55.0",
     "tar": "^7.4.3",
     "uuid": "^11.1.0",
     "winston": "^3.17.0",
