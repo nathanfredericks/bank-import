@@ -1,16 +1,10 @@
 import { formatISO, subDays } from "date-fns";
-import { z } from "zod";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
 import axios from "../../utils/axios";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
-import {
-  AccountResponse,
-  TransactionsResponse,
-  UserResponse,
-  ValidateCodeResponse,
-} from "./schemas";
+import { AccountResponse, TransactionsResponse } from "./schemas";
 
 export class RogersBank extends Bank {
   constructor() {
@@ -20,9 +14,9 @@ export class RogersBank extends Bank {
   public static async create(username: string, password: string) {
     const rogersBank = new RogersBank();
     try {
-      await rogersBank.launchBrowser(true);
+      await rogersBank.launchBrowser();
       await rogersBank.login(username, password);
-      await rogersBank.closeBrowser(undefined, true);
+      await rogersBank.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await rogersBank.handleError(error);
@@ -31,74 +25,6 @@ export class RogersBank extends Bank {
       }
     }
     return rogersBank;
-  }
-
-  private async login(username: string, password: string): Promise<void> {
-    const page = await this.getPage();
-    logger.debug("Navigating to Rogers Bank login page");
-    await page.goto("https://selfserve.rogersbank.com/sign-in?locale=en");
-
-    logger.debug("Filling in username and password");
-    await page.getByRole("textbox", { name: "Username" }).fill(username);
-    await page.getByRole("textbox", { name: "Password" }).fill(password);
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    logger.debug("Waiting for response");
-    const response = await page.waitForResponse(
-      (response) =>
-        response
-          .url()
-          .startsWith(
-            "https://selfserve.apis.rogersbank.com/v1/authenticate",
-          ) && response.request().method() === "POST",
-    );
-
-    const isTwoFactorAuthenticationRequired = response.status() === 412;
-
-    let accountId: string;
-    let customerId: string;
-
-    if (isTwoFactorAuthenticationRequired) {
-      logger.debug("Two-factor authentication required");
-      const authResult = await this.handleTwoFactorAuthentication();
-      accountId = authResult.accountId;
-      customerId = authResult.customerId;
-    } else {
-      const json = await response.json();
-      const userResult = UserResponse.parse(json);
-      accountId = userResult.accountId;
-      customerId = userResult.customerId;
-    }
-
-    await this.processAccount(accountId, customerId);
-  }
-
-  private async processAccount(
-    accountId: string,
-    customerId: string,
-  ): Promise<void> {
-    const page = await this.getPage();
-    const response = await page.waitForResponse(
-      (response: any) =>
-        response.url() ===
-          `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/detail` &&
-        response.request().method() === "GET",
-    );
-
-    const json = await response.json();
-    const account = AccountResponse.parse(json);
-    const transactions = await this.fetchTransactions(
-      accountId,
-      customerId,
-      account.name,
-    );
-
-    this.setAccounts([
-      {
-        ...account,
-        transactions,
-      },
-    ]);
   }
 
   private async fetchTransactions(
@@ -111,8 +37,8 @@ export class RogersBank extends Bank {
       (response: any) =>
         response
           .url()
-          .includes(
-            `/account/${accountId}/customer/${customerId}/transactions`,
+          .startsWith(
+            `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
           ) && response.request().method() === "GET",
     );
 
@@ -139,31 +65,76 @@ export class RogersBank extends Bank {
     return postedTransactions;
   }
 
-  private async handleTwoFactorAuthentication(): Promise<
-    z.infer<typeof ValidateCodeResponse>
-  > {
+  private async login(username: string, password: string): Promise<void> {
     const page = await this.getPage();
-    logger.debug("Filling in two-factor authentication code");
-    await page.getByRole("radio", { name: "@" }).click();
-    await page.getByRole("button", { name: "Send code" }).click();
-    const code = await getEmailTwoFactorAuthenticationCode({
-      afterDate: this.date,
-      sender: "onlineservices@RogersBank.com",
-      subject: "Your verification code",
-      regex: /\b\d{8}\b/,
-    });
-    await page.getByRole("textbox", { name: "Verification Code" }).fill(code);
-    await page.getByRole("button", { name: "Continue" }).click();
+    logger.debug("Navigating to Rogers Bank home page");
+    await page.goto("https://selfserve.rogersbank.com/home");
+
+    const isLoginRequired = await Promise.race([
+      page.waitForSelector("button[aria-label='Sign in' i]").then(() => true),
+      page.waitForSelector("button[aria-label='Sign out' i]").then(() => false),
+    ]);
+
+    if (isLoginRequired) {
+      logger.debug("Filling in username and password");
+      await page.getByRole("textbox", { name: "Username" }).fill(username);
+      await page.getByRole("textbox", { name: "Password" }).fill(password);
+      await page.getByRole("checkbox", { name: "Remember me" }).check();
+      await page.getByRole("button", { name: "Sign in" }).click();
+
+      logger.debug("Waiting for response");
+      const response = await page.waitForResponse(
+        (response) =>
+          response
+            .url()
+            .startsWith(
+              "https://selfserve.apis.rogersbank.com/v1/authenticate",
+            ) && response.request().method() === "POST",
+      );
+
+      const isTwoFactorAuthenticationRequired = response.status() === 412;
+      if (isTwoFactorAuthenticationRequired) {
+        logger.debug("Two-factor authentication required");
+        logger.debug("Filling in two-factor authentication code");
+        await page.getByRole("radio", { name: "@" }).click();
+        await page.getByRole("button", { name: "Send code" }).click();
+        const code = await getEmailTwoFactorAuthenticationCode({
+          afterDate: this.date,
+          sender: "onlineservices@RogersBank.com",
+          subject: "Your verification code",
+          regex: /\b\d{8}\b/,
+        });
+        await page
+          .getByRole("textbox", { name: "Verification Code" })
+          .fill(code);
+        await page.getByRole("button", { name: "Continue" }).click();
+      }
+    }
+
+    logger.debug("Waiting for response");
     const response = await page.waitForResponse(
-      (response: any) =>
-        response
-          .url()
-          .startsWith(
-            "https://selfserve.apis.rogersbank.com/v1/authenticate",
-          ) && response.request().method() === "POST",
+      (response) =>
+        /^https:\/\/selfserve\.apis\.rogersbank\.com\/corebank\/v1\/account\/\d+\/customer\/\d+\/detail$/.test(
+          response.url(),
+        ) && response.request().method() === "GET",
     );
+
     const json = await response.json();
-    const result = ValidateCodeResponse.parse(json);
-    return result;
+    const account = AccountResponse.parse(json);
+
+    const transactions = await this.fetchTransactions(
+      account._accountId,
+      account._customerId,
+      account.name,
+    );
+
+    this.setAccounts([
+      {
+        id: account.id,
+        name: account.name,
+        balance: account.balance,
+        transactions,
+      },
+    ]);
   }
 }
