@@ -2,24 +2,6 @@ import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 import env from "../../utils/env";
 
-const UserResponse = z
-  .object({
-    authenticateResponse: z.object({
-      accountId: z.string(),
-      customerId: z.string(),
-    }),
-  })
-  .transform(({ authenticateResponse }) => authenticateResponse);
-
-const ValidateCodeResponse = z
-  .object({
-    validateCodeResponse: z.object({
-      accountId: z.string(),
-      customerId: z.string(),
-    }),
-  })
-  .transform(({ validateCodeResponse }) => validateCodeResponse);
-
 const AccountResponse = z
   .object({
     accountDetail: z.object({
@@ -29,14 +11,17 @@ const AccountResponse = z
         value: z.coerce.number(),
       }),
       customer: z.object({
+        customerId: z.string(),
         cardLast4: z.string(),
       }),
     }),
   })
   .transform(({ accountDetail: data }) => ({
     id: uuidv5(data.accountId, env.UUID_NAMESPACE),
-    name: `${data.productName} (************${data.customer.cardLast4})`,
+    name: `${data.productName} (${data.customer.cardLast4})`,
     balance: data.currentBalance.value * -1,
+    _accountId: data.accountId,
+    _customerId: data.customer.customerId,
   }));
 
 const Transaction = z
@@ -71,9 +56,4 @@ const TransactionsResponse = z
   })
   .transform(({ activitySummary }) => activitySummary.activities);
 
-export {
-  AccountResponse,
-  TransactionsResponse,
-  UserResponse,
-  ValidateCodeResponse,
-};
+export { AccountResponse, TransactionsResponse };
