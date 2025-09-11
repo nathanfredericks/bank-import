@@ -7,6 +7,8 @@ import { BankName } from "../types";
 import { AccountResponse, TransactionsResponse } from "./schemas";
 
 export class RogersBank extends Bank {
+  private captchaLowScore = false;
+
   constructor() {
     super(BankName.RogersBank);
   }
@@ -93,6 +95,21 @@ export class RogersBank extends Bank {
       );
 
       const isTwoFactorAuthenticationRequired = response.status() === 412;
+
+      if (response.status() === 401) {
+        try {
+          const json = await response.json();
+          if (json.errorCode === "ERR_401_RECAPTCHA_LOW_SCORE") {
+            logger.debug(
+              "ReCAPTCHA low score detected, deleting user data and failing silently",
+            );
+            this.captchaLowScore = true;
+            await this.deleteUserData();
+            return;
+          }
+        } catch (error) {}
+      }
+
       if (isTwoFactorAuthenticationRequired) {
         logger.debug("Two-factor authentication required");
         logger.debug("Filling in two-factor authentication code");
@@ -136,5 +153,9 @@ export class RogersBank extends Bank {
         transactions,
       },
     ]);
+  }
+
+  public isCaptchaLowScore(): boolean {
+    return this.captchaLowScore;
   }
 }

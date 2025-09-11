@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   PutObjectCommandInput,
@@ -63,4 +64,15 @@ async function downloadFile(
   logger.debug(`Successfully downloaded file from S3 bucket: ${key}`);
 }
 
-export { downloadFile, uploadFile };
+async function deleteFile(bucket: string, key: string): Promise<void> {
+  logger.debug(`Deleting file from S3 bucket: ${key}`);
+  await s3Client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }),
+  );
+  logger.debug(`Successfully deleted file from S3 bucket: ${key}`);
+}
+
+export { deleteFile, downloadFile, uploadFile };
