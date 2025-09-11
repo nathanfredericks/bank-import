@@ -23,6 +23,10 @@ switch (env.BANK) {
     );
     const rogersBankAccounts = await rogersBank.getAccounts();
     if (!rogersBankAccounts.length) {
+      if (rogersBank.isCaptchaLowScore()) {
+        logger.info("CAPTCHA low score detected, exiting silently");
+        break;
+      }
       throw new Error("Error fetching accounts from Rogers Bank");
     }
     await importTransactions(rogersBankAccounts);

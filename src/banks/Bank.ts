@@ -9,7 +9,7 @@ import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { sendNotification } from "../utils/pushover";
-import { downloadFile, uploadFile } from "../utils/s3";
+import { deleteFile, downloadFile, uploadFile } from "../utils/s3";
 import { Account, BankName, bankNames } from "./types";
 
 export class Bank {
@@ -189,5 +189,17 @@ export class Bank {
 
   protected setAccounts(accounts: z.infer<typeof Account>[]) {
     this.accounts = accounts;
+  }
+
+  protected async deleteUserData() {
+    try {
+      logger.debug(`Deleting user data for ${this.bank}`);
+      await deleteFile(env.AWS_S3_USER_DATA_BUCKET_NAME, `${this.bank}.tar.gz`);
+      logger.debug(`Successfully deleted user data for ${this.bank}`);
+    } catch (error) {
+      logger.debug(
+        `No user data found to delete for ${this.bank} or deletion failed: ${error}`,
+      );
+    }
   }
 }
