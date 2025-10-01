@@ -23,7 +23,7 @@
     "@aws-sdk/client-s3": "^3.884.0",
     "@aws-sdk/client-secrets-manager": "^3.883.0",
     "@date-fns/tz": "^1.4.1",
-    "@dotenvx/dotenvx": "^1.49.0",
+    "@dotenvx/dotenvx": "^1.51.0",
     "@types/tar": "^6.1.13",
     "axios": "^1.11.0",
     "date-fns": "^4.1.0",
