@@ -1,60 +1,120 @@
-import { GaxiosError } from "gaxios";
-import { gmail_v1, google } from "googleapis";
 import { convert } from "html-to-text";
+import pRetry from "p-retry";
+import { z } from "zod";
+import env from "./env";
 import logger from "./logger";
 import secrets from "./secrets";
 
 const TWO_FACTOR_AUTHENTICATION_CODE_REGEX = /\b\d{6}\b/;
 
-const serviceAccountKey = JSON.parse(secrets.GOOGLE_SERVICE_ACCOUNT_KEY);
-
-const auth = new google.auth.JWT({
-  email: serviceAccountKey.client_email,
-  key: serviceAccountKey.private_key,
-  scopes: ["https://mail.google.com/"],
-  subject: secrets.GMAIL_USER,
+const SessionSchema = z.object({
+  capabilities: z.record(z.string(), z.any()),
+  accounts: z.record(
+    z.string(),
+    z.object({
+      name: z.string(),
+      isPersonal: z.boolean(),
+      isReadOnly: z.boolean(),
+      accountCapabilities: z.record(z.string(), z.any()),
+    }),
+  ),
+  apiUrl: z.string().url(),
+  downloadUrl: z.string(),
+  uploadUrl: z.string(),
+  eventSourceUrl: z.string(),
+  state: z.string(),
 });
 
-const gmailClient = google.gmail({
-  version: "v1",
-  auth,
+const EmailBodyPartSchema = z.object({
+  partId: z.string(),
+  blobId: z.string(),
+  type: z.string().optional(),
 });
 
-function findText(part: gmail_v1.Schema$MessagePart): string | null {
-  if (part.body?.data) {
-    const data = Buffer.from(part.body.data, "base64").toString("utf8");
-    if (part.mimeType === "text/html") {
-      return convert(data, {
-        selectors: [
-          { selector: "a", options: { ignoreHref: true } },
-          { selector: "img", format: "skip" },
-        ],
-      });
-    }
-    return data;
+const EmailSchema = z.object({
+  id: z.string(),
+  htmlBody: z.array(EmailBodyPartSchema).optional(),
+  textBody: z.array(EmailBodyPartSchema).optional(),
+});
+
+const EmailQueryResponseSchema = z.object({
+  accountId: z.string(),
+  queryState: z.string(),
+  canCalculateChanges: z.boolean(),
+  position: z.number(),
+  ids: z.array(z.string()),
+});
+
+const EmailGetResponseSchema = z.object({
+  accountId: z.string(),
+  state: z.string(),
+  list: z.array(EmailSchema),
+  notFound: z.array(z.string()),
+});
+
+const EmailSetResponseSchema = z.object({
+  accountId: z.string(),
+  newState: z.string(),
+  destroyed: z.array(z.string()).optional(),
+});
+
+const JmapResponseSchema = z.object({
+  methodResponses: z.array(z.tuple([z.string(), z.any(), z.string()])),
+  sessionState: z.string(),
+});
+
+type Session = z.infer<typeof SessionSchema>;
+
+let cachedSession: Session | null = null;
+
+async function getSession(): Promise<Session> {
+  if (cachedSession) {
+    return cachedSession;
   }
 
-  if (part.mimeType === "multipart/alternative" && part.parts) {
-    const plainPart = part.parts.find((p) => p.mimeType === "text/plain");
-    if (plainPart) {
-      const text = findText(plainPart);
-      if (text) return text;
-    }
-    const htmlPart = part.parts.find((p) => p.mimeType === "text/html");
-    if (htmlPart) {
-      const text = findText(htmlPart);
-      if (text) return text;
-    }
+  const response = await fetch(env.JMAP_SESSION_URL, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${secrets.JMAP_BEARER_TOKEN}`,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch JMAP session: ${response.status} ${response.statusText}`,
+    );
   }
 
-  if (part.parts) {
-    for (const subPart of part.parts) {
-      const text = findText(subPart);
-      if (text) return text;
-    }
+  const data = await response.json();
+  cachedSession = SessionSchema.parse(data);
+  return cachedSession;
+}
+
+async function jmapRequest(methodCalls: Array<[string, any, string]>) {
+  const session = await getSession();
+
+  const response = await fetch(session.apiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secrets.JMAP_BEARER_TOKEN}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      using: ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+      methodCalls,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `JMAP request failed: ${response.status} ${response.statusText}`,
+    );
   }
 
-  return null;
+  const data = await response.json();
+  return JmapResponseSchema.parse(data);
 }
 
 type GetEmailTwoFactorAuthenticationCodeParams = {
@@ -70,88 +130,177 @@ async function getEmailTwoFactorAuthenticationCode({
   subject,
   regex = TWO_FACTOR_AUTHENTICATION_CODE_REGEX,
 }: GetEmailTwoFactorAuthenticationCodeParams) {
-  const startTime = Date.now();
-  const maxRetryTime = 60 * 1000; // 1 minute
-  const retryInterval = 1000; // 1 second
-  const maxEmailAge = 5 * 60 * 1000; // 5 minutes
+  return pRetry(
+    async () => {
+      logger.debug("Fetching emails");
+      const session = await getSession();
+      const accountId = Object.keys(session.accounts)[0];
 
-  while (Date.now() - startTime < maxRetryTime) {
-    try {
-      logger.debug("Fetching emails from inbox");
-      const query = `in:inbox from:${sender} subject:("${subject}")`;
+      const queryResponse = await jmapRequest([
+        [
+          "Email/query",
+          {
+            accountId,
+            filter: {
+              after: afterDate.toISOString(),
+              from: sender,
+              subject: subject,
+            },
+            sort: [{ property: "receivedAt", isAscending: false }],
+            limit: 1,
+          },
+          "q1",
+        ],
+      ]);
 
-      const messageList = await gmailClient.users.messages.list({
-        userId: "me",
-        q: query,
-      });
+      const [queryMethodName, queryMethodResponse] =
+        queryResponse.methodResponses[0];
 
-      if (!messageList.data.messages?.length) {
-        logger.debug("No emails found, retrying...");
-        await new Promise((resolve) => setTimeout(resolve, retryInterval));
-        continue;
+      if (queryMethodName === "error") {
+        throw new Error(
+          `Email/query error: ${JSON.stringify(queryMethodResponse)}`,
+        );
       }
 
-      for (const message of messageList.data.messages) {
-        if (!message.id) continue;
+      const queryData = EmailQueryResponseSchema.parse(queryMethodResponse);
+      const emailIds = queryData.ids;
 
-        const messageDetails = await gmailClient.users.messages.get({
-          userId: "me",
-          id: message.id,
+      if (!emailIds || emailIds.length === 0) {
+        logger.debug("No emails found");
+        throw new Error("No emails found");
+      }
+
+      const getResponse = await jmapRequest([
+        [
+          "Email/get",
+          {
+            accountId,
+            ids: emailIds,
+            properties: ["htmlBody", "textBody"],
+          },
+          "g1",
+        ],
+      ]);
+
+      const [getMethodName, getMethodResponse] = getResponse.methodResponses[0];
+
+      if (getMethodName === "error") {
+        throw new Error(
+          `Email/get error: ${JSON.stringify(getMethodResponse)}`,
+        );
+      }
+
+      const getData = EmailGetResponseSchema.parse(getMethodResponse);
+      const email = getData.list[0];
+
+      if (!email) {
+        logger.debug("No email data found");
+        throw new Error("No email data found");
+      }
+
+      let text: string | null = null;
+
+      if (email.htmlBody && email.htmlBody.length > 0) {
+        const htmlBody = email.htmlBody[0];
+        const downloadUrl = session.downloadUrl
+          .replace("{accountId}", accountId)
+          .replace("{blobId}", htmlBody.blobId)
+          .replace("{name}", "")
+          .replace("{type}", htmlBody.type || "text/html");
+
+        const blobResponse = await fetch(downloadUrl, {
+          headers: {
+            Authorization: `Bearer ${secrets.JMAP_BEARER_TOKEN}`,
+          },
         });
 
-        if (!messageDetails.data.internalDate) continue;
-
-        const emailDate = Number(messageDetails.data.internalDate);
-        const currentTime = Date.now();
-
-        if (emailDate < afterDate.getTime()) {
-          continue;
+        if (!blobResponse.ok) {
+          throw new Error(
+            `Failed to download HTML body: ${blobResponse.status} ${blobResponse.statusText}`,
+          );
         }
 
-        if (currentTime - emailDate > maxEmailAge) {
-          logger.debug(`Email is older than 5 minutes, skipping`);
-          continue;
+        const html = await blobResponse.text();
+        text = convert(html, {
+          selectors: [
+            { selector: "a", options: { ignoreHref: true } },
+            { selector: "img", format: "skip" },
+          ],
+        });
+      }
+
+      if (!text && email.textBody && email.textBody.length > 0) {
+        const textBody = email.textBody[0];
+        const downloadUrl = session.downloadUrl
+          .replace("{accountId}", accountId)
+          .replace("{blobId}", textBody.blobId)
+          .replace("{name}", "")
+          .replace("{type}", textBody.type || "text/plain");
+
+        const blobResponse = await fetch(downloadUrl, {
+          headers: {
+            Authorization: `Bearer ${secrets.JMAP_BEARER_TOKEN}`,
+          },
+        });
+
+        if (!blobResponse.ok) {
+          throw new Error(
+            `Failed to download text body: ${blobResponse.status} ${blobResponse.statusText}`,
+          );
         }
 
-        if (!messageDetails.data.payload) continue;
+        text = await blobResponse.text();
+      }
 
-        const text = findText(messageDetails.data.payload);
-        if (!text) continue;
+      if (!text) {
+        logger.debug("No email body found");
+        throw new Error("No email body found");
+      }
 
-        const code = text.match(regex)?.[0];
-        if (code) {
-          logger.debug("Found 2FA code, deleting email");
+      const code = text.match(regex)?.[0];
+      if (!code) {
+        logger.debug("2FA code not found in email");
+        throw new Error("2FA code not found");
+      }
 
-          try {
-            await gmailClient.users.messages.delete({
-              userId: "me",
-              id: message.id,
-            });
-            logger.debug("Email deleted successfully");
-          } catch (deleteError) {
-            logger.error("Failed to delete email", deleteError);
-          }
+      logger.debug("Found 2FA code, deleting email");
 
-          return code;
+      try {
+        const deleteResponse = await jmapRequest([
+          [
+            "Email/set",
+            {
+              accountId,
+              destroy: emailIds,
+            },
+            "d1",
+          ],
+        ]);
+
+        const [deleteMethodName, deleteMethodResponse] =
+          deleteResponse.methodResponses[0];
+
+        if (deleteMethodName === "error") {
+          logger.error(
+            "Failed to delete email",
+            JSON.stringify(deleteMethodResponse),
+          );
+        } else {
+          EmailSetResponseSchema.parse(deleteMethodResponse);
+          logger.debug("Email deleted successfully");
         }
+      } catch (deleteError) {
+        logger.error("Failed to delete email", deleteError);
       }
 
-      logger.debug("2FA code not found in current emails, retrying...");
-      await new Promise((resolve) => setTimeout(resolve, retryInterval));
-    } catch (error) {
-      if (error instanceof GaxiosError) {
-        logger.error("Error fetching emails", error.response?.data);
-      }
-
-      if (Date.now() - startTime > maxRetryTime - retryInterval) {
-        throw error;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, retryInterval));
-    }
-  }
-
-  throw new Error("2FA code not found within timeout period");
+      return code;
+    },
+    {
+      retries: 60,
+      minTimeout: 1000,
+      maxTimeout: 1000,
+    },
+  );
 }
 
 export { getEmailTwoFactorAuthenticationCode };
