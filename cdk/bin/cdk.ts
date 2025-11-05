@@ -156,7 +156,7 @@ function createBankSchedule(
     image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, "../.."), {
       platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
     }),
-    stopTimeout: cdk.Duration.minutes(2),
+    stopTimeout: cdk.Duration.minutes(5),
     environment: {
       BANK: id,
       TZ: timezone,
@@ -272,7 +272,7 @@ function createBankSchedule(
   });
 }
 
-createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
+// createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
 
 createBankSchedule(
   "rogers-bank",
