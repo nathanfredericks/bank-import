@@ -272,11 +272,18 @@ function createBankSchedule(
   });
 }
 
-// createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
+createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
 
 createBankSchedule(
   "rogers-bank",
   "RogersBank",
+  "cron(0 0/4 * * ? *)",
+  timezone,
+);
+
+createBankSchedule(
+  "tangerine",
+  "Tangerine",
   "cron(0 0/4 * * ? *)",
   timezone,
 );
