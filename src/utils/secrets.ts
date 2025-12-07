@@ -37,6 +37,8 @@ const Secrets = z.object({
   YNAB_ACCESS_TOKEN: z.string(),
   JMAP_BEARER_TOKEN: z.string(),
   MESSAGES_API_KEY: z.string(),
+  TANGERINE_USERNAME: z.string(),
+  TANGERINE_PASSWORD: z.string(),
 });
 
 const secretJson = JSON.parse(SecretString || "{}");

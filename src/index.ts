@@ -1,6 +1,7 @@
 import { BMO } from "./banks/bmo/BMO";
 import { NBDB } from "./banks/nbdb/NBDB";
 import { RogersBank } from "./banks/rogers-bank/RogersBank";
+import { Tangerine } from "./banks/tangerine/Tangerine";
 import { BankName } from "./banks/types";
 import env from "./utils/env";
 import logger from "./utils/logger";
@@ -31,6 +32,16 @@ switch (env.BANK) {
     }
     await importTransactions(rogersBankAccounts);
     logger.info("Imported transactions from Rogers Bank");
+    break;
+  case BankName.Tangerine:
+    logger.info("Importing transactions from Tangerine");
+    const tangerine = await Tangerine.create(
+      secrets.TANGERINE_USERNAME,
+      secrets.TANGERINE_PASSWORD,
+    );
+    const tangerineAccounts = await tangerine.getAccounts();
+    await importTransactions(tangerineAccounts);
+    logger.info("Imported transactions from Tangerine");
     break;
   case BankName.NBDB:
     logger.info("Importing transactions from NBDB");

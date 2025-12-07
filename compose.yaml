@@ -14,6 +14,11 @@ services:
     environment:
       BANK: rogers-bank
 
+  bank-import-tangerine:
+    <<: *bank-import
+    environment:
+      BANK: tangerine
+
   bank-import-nbdb:
     <<: *bank-import
     environment:
