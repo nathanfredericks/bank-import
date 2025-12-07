@@ -303,4 +303,75 @@ async function getEmailTwoFactorAuthenticationCode({
   );
 }
 
-export { getEmailTwoFactorAuthenticationCode };
+const SmsMessageSchema = z.object({
+  id: z.string(),
+  created_at: z.string(),
+  message: z.string(),
+  from: z.string(),
+});
+
+const SmsResponseSchema = z.array(SmsMessageSchema);
+
+type GetSMSTwoFactorAuthenticationCodeParams = {
+  afterDate: Date;
+  sender: string | string[];
+  regex?: RegExp;
+};
+
+async function getSMSTwoFactorAuthenticationCode({
+  afterDate,
+  sender,
+  regex = TWO_FACTOR_AUTHENTICATION_CODE_REGEX,
+}: GetSMSTwoFactorAuthenticationCodeParams) {
+  return pRetry(
+    async () => {
+      logger.debug("Fetching SMS messages");
+      const response = await fetch("https://messages.fredericks.app", {
+        headers: {
+          "x-api-key": secrets.MESSAGES_API_KEY,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch SMS messages: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const data = await response.json();
+      const messages = SmsResponseSchema.parse(data);
+
+      const message = messages
+        .filter((msg) => msg.from === sender)
+        .filter((msg) => {
+          const messageDate = new Date(parseInt(msg.created_at) * 1000);
+          return messageDate > afterDate;
+        })
+        .sort((a, b) => parseInt(b.created_at) - parseInt(a.created_at))[0];
+
+      if (!message) {
+        logger.debug("No matching SMS found");
+        throw new Error("No matching SMS found");
+      }
+
+      const code = message.message.match(regex)?.[0];
+      if (!code) {
+        logger.debug("2FA code not found in SMS");
+        throw new Error("2FA code not found in SMS");
+      }
+
+      logger.debug("Found 2FA code in SMS");
+      return code;
+    },
+    {
+      retries: 60,
+      minTimeout: 1000,
+      maxTimeout: 1000,
+    },
+  );
+}
+
+export {
+  getEmailTwoFactorAuthenticationCode,
+  getSMSTwoFactorAuthenticationCode,
+};

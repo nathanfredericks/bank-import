@@ -36,6 +36,7 @@ const Secrets = z.object({
   PUSHOVER_USER: z.string(),
   YNAB_ACCESS_TOKEN: z.string(),
   JMAP_BEARER_TOKEN: z.string(),
+  MESSAGES_API_KEY: z.string(),
 });
 
 const secretJson = JSON.parse(SecretString || "{}");
