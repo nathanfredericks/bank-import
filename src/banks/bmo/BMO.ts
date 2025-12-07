@@ -2,7 +2,7 @@ import { tz } from "@date-fns/tz";
 import { format, formatISO, parseISO, subDays } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
 import axios from "../../utils/axios";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
@@ -194,7 +194,7 @@ export class BMO extends Bank {
 
     logger.debug("Filling in card number and password");
     await page
-      .getByRole("textbox", { name: "Card number" })
+      .getByRole("textbox", { name: "Card number or Login ID" })
       .pressSequentially(cardNumber);
     await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
@@ -214,17 +214,16 @@ export class BMO extends Bank {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
       await page.getByRole("button", { name: "Next" }).click();
-      await page.getByRole("radio", { name: "Email" }).click();
+      await page.getByRole("radio", { name: "SMS" }).click();
       await page
         .getByRole("checkbox", {
           name: "IMPORTANT: To proceed, you must confirm you will not provide this verification code to anyone.",
         })
         .click();
       await page.getByRole("button", { name: "Send code" }).click();
-      const code = await getEmailTwoFactorAuthenticationCode({
+      const code = await getSMSTwoFactorAuthenticationCode({
         afterDate: this.date,
-        sender: "bmoalerts@bmo.com",
-        subject: "BMO Verification Code",
+        sender: "266898",
       });
       await page.getByRole("textbox", { name: "Verification code" }).fill(code);
       await page.getByRole("button", { name: "Confirm" }).click();
