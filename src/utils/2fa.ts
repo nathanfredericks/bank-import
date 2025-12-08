@@ -1,5 +1,5 @@
 import { DynamoDBClient, DynamoDBClientConfig } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import { convert } from "html-to-text";
 import pRetry from "p-retry";
 import { z } from "zod";
@@ -385,7 +385,17 @@ async function getSMSTwoFactorAuthenticationCode({
           throw new Error("2FA code not found in SMS");
         }
 
-        logger.debug("Found 2FA code in SMS");
+        logger.debug("Found 2FA code in SMS, deleting message");
+
+        await docClient.send(
+          new DeleteCommand({
+            TableName: MESSAGES_TABLE_NAME,
+            Key: {
+              id: message.id,
+            },
+          }),
+        );
+
         return code;
     },
     {

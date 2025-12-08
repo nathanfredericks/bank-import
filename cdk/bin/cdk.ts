@@ -217,7 +217,7 @@ function createBankSchedule(
   taskDefinition.addToTaskRolePolicy(
     new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
-      actions: ["dynamodb:Scan"],
+      actions: ["dynamodb:Scan", "dynamodb:DeleteItem"],
       resources: [
         `arn:aws:dynamodb:${stack.region}:${stack.account}:table/${messagesTableName}`,
       ],
