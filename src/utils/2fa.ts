@@ -1,3 +1,5 @@
+import { DynamoDBClient, DynamoDBClientConfig } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { convert } from "html-to-text";
 import pRetry from "p-retry";
 import { z } from "zod";
@@ -6,6 +8,20 @@ import logger from "./logger";
 import secrets from "./secrets";
 
 const TWO_FACTOR_AUTHENTICATION_CODE_REGEX = /\b\d{6}\b/;
+const MESSAGES_TABLE_NAME = env.AWS_DYNAMODB_MESSAGES_TABLE_NAME;
+
+const config: DynamoDBClientConfig = {};
+
+if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY && env.AWS_DEFAULT_REGION) {
+  config.credentials = {
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  };
+  config.region = env.AWS_DEFAULT_REGION;
+}
+
+const client = new DynamoDBClient(config);
+const docClient = DynamoDBDocumentClient.from(client);
 
 const SessionSchema = z.object({
   capabilities: z.record(z.string(), z.any()),
@@ -305,7 +321,7 @@ async function getEmailTwoFactorAuthenticationCode({
 
 const SmsMessageSchema = z.object({
   id: z.string(),
-  created_at: z.string(),
+  created_at: z.number(),
   message: z.string(),
   from: z.string(),
 });
@@ -326,37 +342,50 @@ async function getSMSTwoFactorAuthenticationCode({
   return pRetry(
     async () => {
       logger.debug("Fetching SMS messages");
-      const response = await fetch("https://messages.fredericks.app", {
-        headers: {
-          "x-api-key": secrets.MESSAGES_API_KEY,
-        },
-      });
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch SMS messages: ${response.status} ${response.statusText}`,
-        );
+        const senders = Array.isArray(sender) ? sender : [sender];
+        const afterTimestamp = Math.floor(afterDate.getTime() / 1000);
+
+        const filterExpressionParts = ["#created_at >= :afterDate"];
+        const expressionAttributeValues: Record<string, any> = {
+          ":afterDate": afterTimestamp,
+        };
+        const expressionAttributeNames: Record<string, string> = {
+          "#created_at": "created_at",
+          "#from": "from",
+        };
+
+        if (senders.length > 0) {
+          const senderFilters = senders.map((_, index) => {
+            const key = `:sender${index}`;
+            expressionAttributeValues[key] = senders[index];
+            return `#from = ${key}`;
+          });
+          filterExpressionParts.push(`(${senderFilters.join(" OR ")})`);
       }
 
-      const data = await response.json();
-      const messages = SmsResponseSchema.parse(data);
+        const command = new ScanCommand({
+          TableName: MESSAGES_TABLE_NAME,
+          FilterExpression: filterExpressionParts.join(" AND "),
+          ExpressionAttributeValues: expressionAttributeValues,
+          ExpressionAttributeNames: expressionAttributeNames,
+        });
 
-      const message = messages
-        .filter((msg) => msg.from === sender)
-        .filter((msg) => {
-          const messageDate = new Date(parseInt(msg.created_at) * 1000);
-          return messageDate > afterDate;
-        })
-        .sort((a, b) => parseInt(b.created_at) - parseInt(a.created_at))[0];
+        const response = await docClient.send(command);
+
+        if (!response.Items || response.Items.length === 0) {
+          throw new Error("No matching SMS found");
+        }
+
+        const messages = SmsResponseSchema.parse(response.Items);
+        const message = messages.sort((a, b) => b.created_at - a.created_at)[0];
 
       if (!message) {
-        logger.debug("No matching SMS found");
         throw new Error("No matching SMS found");
       }
 
       const code = message.message.match(regex)?.[0];
       if (!code) {
-        logger.debug("2FA code not found in SMS");
         throw new Error("2FA code not found in SMS");
       }
 

@@ -39,6 +39,11 @@ const ynabBudgetId = ssm.StringParameter.valueForStringParameter(
   "/bank-import/ynab-budget-id",
 );
 
+const messagesTableName = ssm.StringParameter.valueForStringParameter(
+  stack,
+  "/bank-import/messages-table-name",
+);
+
 const secretArn = ssm.StringParameter.valueForStringParameter(
   stack,
   "/bank-import/secret-arn",
@@ -164,6 +169,7 @@ function createBankSchedule(
       AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
       AWS_S3_USER_DATA_BUCKET_NAME: userDataBucket.bucketName,
       AWS_SECRET_ARN: secretArn,
+      AWS_DYNAMODB_MESSAGES_TABLE_NAME: messagesTableName,
       // HTTP_PROXY: "http://localhost:1055",
     },
     logging: ecs.LogDrivers.awsLogs({
@@ -205,6 +211,16 @@ function createBankSchedule(
       effect: iam.Effect.ALLOW,
       actions: ["secretsmanager:GetSecretValue"],
       resources: [secretArn],
+    }),
+  );
+
+  taskDefinition.addToTaskRolePolicy(
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["dynamodb:Scan"],
+      resources: [
+        `arn:aws:dynamodb:${stack.region}:${stack.account}:table/${messagesTableName}`,
+      ],
     }),
   );
 
