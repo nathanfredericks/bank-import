@@ -182,7 +182,6 @@ async function getEmailTwoFactorAuthenticationCode({
       const emailIds = queryData.ids;
 
       if (!emailIds || emailIds.length === 0) {
-        logger.debug("No emails found");
         throw new Error("No emails found");
       }
 
@@ -210,7 +209,6 @@ async function getEmailTwoFactorAuthenticationCode({
       const email = getData.list[0];
 
       if (!email) {
-        logger.debug("No email data found");
         throw new Error("No email data found");
       }
 
@@ -269,13 +267,11 @@ async function getEmailTwoFactorAuthenticationCode({
       }
 
       if (!text) {
-        logger.debug("No email body found");
         throw new Error("No email body found");
       }
 
       const code = text.match(regex)?.[0];
       if (!code) {
-        logger.debug("2FA code not found in email");
         throw new Error("2FA code not found");
       }
 
@@ -341,7 +337,7 @@ async function getSMSTwoFactorAuthenticationCode({
 }: GetSMSTwoFactorAuthenticationCodeParams) {
   return pRetry(
     async () => {
-      logger.debug("Fetching SMS messages");
+        logger.debug("Fetching SMS messages");
 
         const senders = Array.isArray(sender) ? sender : [sender];
         const afterTimestamp = Math.floor(afterDate.getTime() / 1000);
@@ -362,7 +358,7 @@ async function getSMSTwoFactorAuthenticationCode({
             return `#from = ${key}`;
           });
           filterExpressionParts.push(`(${senderFilters.join(" OR ")})`);
-      }
+        }
 
         const command = new ScanCommand({
           TableName: MESSAGES_TABLE_NAME,
@@ -380,17 +376,17 @@ async function getSMSTwoFactorAuthenticationCode({
         const messages = SmsResponseSchema.parse(response.Items);
         const message = messages.sort((a, b) => b.created_at - a.created_at)[0];
 
-      if (!message) {
-        throw new Error("No matching SMS found");
-      }
+        if (!message) {
+          throw new Error("No matching SMS found");
+        }
 
-      const code = message.message.match(regex)?.[0];
-      if (!code) {
-        throw new Error("2FA code not found in SMS");
-      }
+        const code = message.message.match(regex)?.[0];
+        if (!code) {
+          throw new Error("2FA code not found in SMS");
+        }
 
-      logger.debug("Found 2FA code in SMS");
-      return code;
+        logger.debug("Found 2FA code in SMS");
+        return code;
     },
     {
       retries: 60,

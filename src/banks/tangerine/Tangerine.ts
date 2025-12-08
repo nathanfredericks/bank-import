@@ -53,7 +53,7 @@ export class Tangerine extends Bank {
   }
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
-    logger.debug(`Fetching transactions for account ${account.name}`);
+    logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
     const response = await fetch(
       "https://secure.tangerine.ca/web/rest/pfm/v1/transactions?" +
         new URLSearchParams({
@@ -94,11 +94,11 @@ export class Tangerine extends Bank {
     await page.waitForSelector("#onetrust-accept-btn-handler");
     await page.click("#onetrust-accept-btn-handler");
 
-    logger.debug("Filing in login ID");
+    logger.debug("Filling in login ID");
     await page.getByRole("textbox", { name: "Login ID" }).fill(loginID);
     await page.getByRole("button", { name: "Next" }).click();
 
-    logger.debug("Filing in password");
+    logger.debug("Filling in password");
     await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("button", { name: "Log In" }).click();
 

@@ -63,7 +63,7 @@ export class BMO extends Bank {
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
     if (account._type === "BANK_ACCOUNT") {
-      logger.debug(`Fetching transactions for account ${account.name}`);
+      logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
       const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getBankAccountDetails",
         {
@@ -74,17 +74,17 @@ export class BMO extends Bank {
             Cookie: await this.getCookiesAsString(),
           },
           body: JSON.stringify({
-          MySummaryRq: {
-            HdrRq: await this.generateRequestHeaders(),
-            BodyRq: {
-              accountIndex: account._index,
-              limitNoTxns: "1500",
-              filterFromDate: formatISO(subDays(this.date, 10), {
-                representation: "date",
-              }),
-              filterToDate: formatISO(this.date, { representation: "date" }),
+            MySummaryRq: {
+              HdrRq: await this.generateRequestHeaders(),
+              BodyRq: {
+                accountIndex: account._index,
+                limitNoTxns: "1500",
+                filterFromDate: formatISO(subDays(this.date, 10), {
+                  representation: "date",
+                }),
+                filterToDate: formatISO(this.date, { representation: "date" }),
+              },
             },
-          },
           }),
         },
       );
@@ -106,7 +106,7 @@ export class BMO extends Bank {
       );
       return transactions;
     } else if (account._type === "CREDIT_CARD") {
-      logger.debug(`Fetching transactions for account ${account.name}`);
+      logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
       const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
         {
@@ -117,14 +117,14 @@ export class BMO extends Bank {
             Cookie: await this.getCookiesAsString(),
           },
           body: JSON.stringify({
-          MySummaryRq: {
-            HdrRq: await this.generateRequestHeaders(),
-            BodyRq: {
-              accountIndex: account._index,
-              limitNoTxns: "1500",
-              filter: "unbilled",
+            MySummaryRq: {
+              HdrRq: await this.generateRequestHeaders(),
+              BodyRq: {
+                accountIndex: account._index,
+                limitNoTxns: "1500",
+                filter: "unbilled",
+              },
             },
-          },
           }),
         },
       );
@@ -156,14 +156,14 @@ export class BMO extends Bank {
               Cookie: await this.getCookiesAsString(),
             },
             body: JSON.stringify({
-            MySummaryRq: {
-              HdrRq: await this.generateRequestHeaders(),
-              BodyRq: {
-                accountIndex: account._index,
-                limitNoTxns: "1500",
-                filter: previousStatementDate,
+              MySummaryRq: {
+                HdrRq: await this.generateRequestHeaders(),
+                BodyRq: {
+                  accountIndex: account._index,
+                  limitNoTxns: "1500",
+                  filter: previousStatementDate,
+                },
               },
-            },
             }),
           },
         );

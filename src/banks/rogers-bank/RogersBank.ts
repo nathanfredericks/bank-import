@@ -17,7 +17,7 @@ export class RogersBank extends Bank {
     try {
       await rogersBank.launchBrowser();
       await rogersBank.login(username, password);
-      await rogersBank.closeBrowser();
+      await rogersBank.closeBrowser(undefined, rogersBank.isCaptchaLowScore());
     } catch (error) {
       if (error instanceof Error) {
         await rogersBank.handleError(error);
@@ -32,6 +32,7 @@ export class RogersBank extends Bank {
     accountId: string,
     customerId: string,
     accountName: string,
+    accountUuid: string,
   ) {
     const page = await this.getPage();
     const response = await page.waitForResponse(
@@ -45,19 +46,19 @@ export class RogersBank extends Bank {
 
     const url = new URL(
       `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
-      );
+    );
     url.searchParams.append(
       "fromDate",
-formatISO(subDays(this.date, 10), {
-            representation: "date",
-          }),
-);
+      formatISO(subDays(this.date, 10), {
+        representation: "date",
+      }),
+    );
     url.searchParams.append(
-      "          toDate",
-formatISO(this.date, {
-            representation: "date",
-          }),
-        );
+      "toDate",
+      formatISO(this.date, {
+        representation: "date",
+      }),
+    );
 
     const transactionsResponse = await fetch(url.toString(), {
       headers: await response.request().allHeaders(),
@@ -66,14 +67,14 @@ formatISO(this.date, {
     if (!transactionsResponse.ok) {
       throw new Error(
         `Failed to fetch transactions: ${transactionsResponse.statusText}`,
-    );
-}
+      );
+    }
 
     const transactions = await transactionsResponse.json();
 
     const postedTransactions = TransactionsResponse.parse(transactions);
     logger.info(
-      `Fetched ${postedTransactions.length} transaction(s) for account ${accountName}`,
+      `Fetched transactions for account ${accountName} (ID: ${accountUuid})`,
     );
 
     return postedTransactions;
@@ -91,8 +92,8 @@ formatISO(this.date, {
 
     if (isLoginRequired) {
       logger.debug("Filling in username and password");
-      await page.getByRole("textbox", { name: "Username" }).fill(username);
-      await page.getByRole("textbox", { name: "Password" }).fill(password);
+      await page.getByRole("textbox", { name: "Username" }).pressSequentially(username);
+      await page.getByRole("textbox", { name: "Password" }).pressSequentially(password);
       await page.getByRole("checkbox", { name: "Remember me" }).check();
       await page.getByRole("button", { name: "Sign in" }).click();
 
@@ -155,6 +156,7 @@ formatISO(this.date, {
       account._accountId,
       account._customerId,
       account.name,
+      account.id,
     );
 
     this.setAccounts([
