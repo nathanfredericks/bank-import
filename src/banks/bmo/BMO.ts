@@ -3,7 +3,6 @@ import { format, formatISO, parseISO, subDays } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
-import axios from "../../utils/axios";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -65,9 +64,16 @@ export class BMO extends Bank {
   private async fetchTransactions(account: z.infer<typeof Account>) {
     if (account._type === "BANK_ACCOUNT") {
       logger.debug(`Fetching transactions for account ${account.name}`);
-      const { data } = await axios.post(
+      const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getBankAccountDetails",
         {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+            Cookie: await this.getCookiesAsString(),
+          },
+          body: JSON.stringify({
           MySummaryRq: {
             HdrRq: await this.generateRequestHeaders(),
             BodyRq: {
@@ -79,14 +85,13 @@ export class BMO extends Bank {
               filterToDate: formatISO(this.date, { representation: "date" }),
             },
           },
-        },
-        {
-          headers: {
-            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
-            Cookie: await this.getCookiesAsString(),
-          },
+          }),
         },
       );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch transactions: ${response.statusText}`);
+      }
+      const data = await response.json();
       let transactions = BankAccountTransactionsResponse.parse(data);
       transactions = transactions
         .filter(
@@ -102,9 +107,16 @@ export class BMO extends Bank {
       return transactions;
     } else if (account._type === "CREDIT_CARD") {
       logger.debug(`Fetching transactions for account ${account.name}`);
-      const { data: unbilledTransactionsData } = await axios.post(
+      const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
         {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+            Cookie: await this.getCookiesAsString(),
+          },
+          body: JSON.stringify({
           MySummaryRq: {
             HdrRq: await this.generateRequestHeaders(),
             BodyRq: {
@@ -113,14 +125,16 @@ export class BMO extends Bank {
               filter: "unbilled",
             },
           },
-        },
-        {
-          headers: {
-            "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
-            Cookie: await this.getCookiesAsString(),
-          },
+          }),
         },
       );
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch unbilled transactions: ${response.statusText}`,
+        );
+      }
+      const unbilledTransactionsData = await response.json();
 
       const {
         transactions: unbilledTransactions,
@@ -132,9 +146,16 @@ export class BMO extends Bank {
       const previousStatementDate = previousStatementDates.sort().reverse()[0];
 
       if (previousStatementDate) {
-        const { data: previousTransactionsData } = await axios.post(
+        const response = await fetch(
           "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
           {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
+              Cookie: await this.getCookiesAsString(),
+            },
+            body: JSON.stringify({
             MySummaryRq: {
               HdrRq: await this.generateRequestHeaders(),
               BodyRq: {
@@ -143,14 +164,15 @@ export class BMO extends Bank {
                 filter: previousStatementDate,
               },
             },
-          },
-          {
-            headers: {
-              "X-XSRF-TOKEN": await this.getCookie("XSRF-TOKEN"),
-              Cookie: await this.getCookiesAsString(),
-            },
+            }),
           },
         );
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch previous transactions: ${response.statusText}`,
+          );
+        }
+        const previousTransactionsData = await response.json();
         const { transactions: previousTransactions } =
           CreditCardTransactionsResponse.parse(previousTransactionsData);
         allTransactions = [...allTransactions, ...previousTransactions];

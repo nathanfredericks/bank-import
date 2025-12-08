@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
@@ -90,19 +90,21 @@ export class Bank {
 
     if (this.userDataDir && !tracingFilePath && !skipUserDataDownload) {
       try {
-        const archiveDir = await mkdtemp(join(tmpdir(), "archive-"));
-        logger.debug(`Created temporary archive directory: ${archiveDir}`);
-        const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
-        logger.debug(`Creating user data archive at ${archivePath}`);
-        await tar.c(
+        logger.debug(`Creating user data archive for ${this.bank}`);
+        const tarStream = tar.c(
           {
             gzip: true,
-            file: archivePath,
             cwd: this.userDataDir,
           },
           ["."],
         );
-        const archiveBuffer = await readFile(archivePath);
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of tarStream) {
+          chunks.push(Buffer.from(chunk));
+        }
+        const archiveBuffer = Buffer.concat(chunks);
+
         await uploadFile(
           env.AWS_S3_USER_DATA_BUCKET_NAME,
           `${this.bank}.tar.gz`,
@@ -140,7 +142,7 @@ export class Bank {
     const traceFilePath = getTraceFilePath(traceFileName);
     await this.closeBrowser(traceFilePath);
     logger.info(`Saved trace to ${traceFilePath}`);
-    const traceFile = await readFile(traceFilePath);
+    const traceFile = await Bun.file(traceFilePath).bytes();
     await uploadFile(
       env.AWS_S3_TRACES_BUCKET_NAME,
       traceFileName,

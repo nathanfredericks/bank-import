@@ -6,9 +6,6 @@ import {
   S3Client,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
-import { createWriteStream } from "node:fs";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import env from "./env";
 import logger from "./logger";
 
@@ -59,8 +56,10 @@ async function downloadFile(
   if (!response.Body) {
     throw new Error("No body in S3 response");
   }
-  const fileStream = createWriteStream(path);
-  await pipeline(response.Body as Readable, fileStream);
+
+  const bytes = await response.Body.transformToByteArray();
+  await Bun.write(path, bytes);
+
   logger.debug(`Successfully downloaded file from S3 bucket: ${key}`);
 }
 

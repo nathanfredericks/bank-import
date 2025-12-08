@@ -1,13 +1,27 @@
-import winston from "winston";
-
-const logger = winston.createLogger({
-  level: "debug",
-  format: winston.format.combine(
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.json(),
-  ),
-  transports: [new winston.transports.Console()],
-});
+const logger = {
+  debug: (message: string, ...meta: any[]) => {
+    console.log(JSON.stringify({ level: "debug", message, ...meta }));
+  },
+  info: (message: string, ...meta: any[]) => {
+    console.log(JSON.stringify({ level: "info", message, ...meta }));
+  },
+  warn: (message: string, ...meta: any[]) => {
+    console.warn(JSON.stringify({ level: "warn", message, ...meta }));
+  },
+  error: (message: string | Error, ...meta: any[]) => {
+    if (message instanceof Error) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: message.message,
+          stack: message.stack,
+          ...meta,
+        }),
+      );
+    } else {
+      console.error(JSON.stringify({ level: "error", message, ...meta }));
+    }
+  },
+};
 
 export default logger;

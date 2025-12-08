@@ -1,10 +1,15 @@
 {
   "compilerOptions": {
-    "target": "es2020",
+    "lib": ["esnext"],
     "module": "esnext",
-    "moduleResolution": "node",
-    "allowSyntheticDefaultImports": true,
+    "target": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["bun"]
   }
 }

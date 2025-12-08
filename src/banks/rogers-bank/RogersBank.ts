@@ -1,6 +1,5 @@
 import { formatISO, subDays } from "date-fns";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
-import axios from "../../utils/axios";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -44,20 +43,33 @@ export class RogersBank extends Bank {
           ) && response.request().method() === "GET",
     );
 
-    const { data: transactions } = await axios.get(
+    const url = new URL(
       `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
-      {
-        headers: await response.request().allHeaders(),
-        params: {
-          fromDate: formatISO(subDays(this.date, 10), {
+      );
+    url.searchParams.append(
+      "fromDate",
+formatISO(subDays(this.date, 10), {
             representation: "date",
           }),
-          toDate: formatISO(this.date, {
+);
+    url.searchParams.append(
+      "          toDate",
+formatISO(this.date, {
             representation: "date",
           }),
-        },
-      },
+        );
+
+    const transactionsResponse = await fetch(url.toString(), {
+      headers: await response.request().allHeaders(),
+    });
+
+    if (!transactionsResponse.ok) {
+      throw new Error(
+        `Failed to fetch transactions: ${transactionsResponse.statusText}`,
     );
+}
+
+    const transactions = await transactionsResponse.json();
 
     const postedTransactions = TransactionsResponse.parse(transactions);
     logger.info(

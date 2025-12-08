@@ -1,11 +1,5 @@
-import { config } from "@dotenvx/dotenvx";
 import { z } from "zod";
 import { BankName } from "../banks/types";
-
-const env = config({
-  quiet: true,
-  ignore: ["MISSING_ENV_FILE"],
-});
 
 const Env = z.object({
   TZ: z.string(),
@@ -24,7 +18,4 @@ const Env = z.object({
   BANK: z.enum(BankName),
 });
 
-export default Env.parse({
-  ...process.env,
-  ...env.parsed,
-});
+export default Env.parse(Bun.env);
