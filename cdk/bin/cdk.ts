@@ -281,12 +281,7 @@ createBankSchedule(
   timezone,
 );
 
-createBankSchedule(
-  "tangerine",
-  "Tangerine",
-  "cron(0 0/4 * * ? *)",
-  timezone,
-);
+createBankSchedule("tangerine", "Tangerine", "cron(0 0/4 * * ? *)", timezone);
 
 createBankSchedule(
   "nbdb",
