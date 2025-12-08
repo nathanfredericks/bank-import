@@ -15,7 +15,7 @@ export class RogersBank extends Bank {
   public static async create(username: string, password: string) {
     const rogersBank = new RogersBank();
     try {
-      await rogersBank.launchBrowser();
+      await rogersBank.launchBrowser(true);
       await rogersBank.login(username, password);
       await rogersBank.closeBrowser(undefined, rogersBank.isCaptchaLowScore());
     } catch (error) {

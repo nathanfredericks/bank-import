@@ -12,7 +12,7 @@ export class NBDB extends Bank {
   public static async create(userID: string, password: string) {
     const nbdb = new NBDB();
     try {
-      await nbdb.launchBrowser();
+      await nbdb.launchBrowser(false);
       await nbdb.login(userID, password);
       await nbdb.closeBrowser();
     } catch (error) {
