@@ -58,7 +58,7 @@ export class Bank {
 
     logger.debug("Launching browser");
     const options: LaunchOptions = {
-      headless: false
+      headless: false,
     };
     if (env.HTTP_PROXY) {
       options.proxy = {

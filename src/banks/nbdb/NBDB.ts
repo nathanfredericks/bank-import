@@ -101,9 +101,7 @@ export class NBDB extends Bank {
     const summary = SummaryResponse.parse(summaryJson);
 
     for (const account of summary) {
-      logger.info(
-        `Fetched account ${account.name} (ID: ${account.id})`,
-      );
+      logger.info(`Fetched account ${account.name} (ID: ${account.id})`);
     }
 
     this.setAccounts(summary);

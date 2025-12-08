@@ -1,5 +1,9 @@
 import { DynamoDBClient, DynamoDBClientConfig } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  ScanCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { convert } from "html-to-text";
 import pRetry from "p-retry";
 import { z } from "zod";
@@ -12,7 +16,11 @@ const MESSAGES_TABLE_NAME = env.AWS_DYNAMODB_MESSAGES_TABLE_NAME;
 
 const config: DynamoDBClientConfig = {};
 
-if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY && env.AWS_DEFAULT_REGION) {
+if (
+  env.AWS_ACCESS_KEY_ID &&
+  env.AWS_SECRET_ACCESS_KEY &&
+  env.AWS_DEFAULT_REGION
+) {
   config.credentials = {
     accessKeyId: env.AWS_ACCESS_KEY_ID,
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
@@ -337,66 +345,66 @@ async function getSMSTwoFactorAuthenticationCode({
 }: GetSMSTwoFactorAuthenticationCodeParams) {
   return pRetry(
     async () => {
-        logger.debug("Fetching SMS messages");
+      logger.debug("Fetching SMS messages");
 
-        const senders = Array.isArray(sender) ? sender : [sender];
-        const afterTimestamp = Math.floor(afterDate.getTime() / 1000);
+      const senders = Array.isArray(sender) ? sender : [sender];
+      const afterTimestamp = Math.floor(afterDate.getTime() / 1000);
 
-        const filterExpressionParts = ["#created_at >= :afterDate"];
-        const expressionAttributeValues: Record<string, any> = {
-          ":afterDate": afterTimestamp,
-        };
-        const expressionAttributeNames: Record<string, string> = {
-          "#created_at": "created_at",
-          "#from": "from",
-        };
+      const filterExpressionParts = ["#created_at >= :afterDate"];
+      const expressionAttributeValues: Record<string, any> = {
+        ":afterDate": afterTimestamp,
+      };
+      const expressionAttributeNames: Record<string, string> = {
+        "#created_at": "created_at",
+        "#from": "from",
+      };
 
-        if (senders.length > 0) {
-          const senderFilters = senders.map((_, index) => {
-            const key = `:sender${index}`;
-            expressionAttributeValues[key] = senders[index];
-            return `#from = ${key}`;
-          });
-          filterExpressionParts.push(`(${senderFilters.join(" OR ")})`);
-        }
-
-        const command = new ScanCommand({
-          TableName: MESSAGES_TABLE_NAME,
-          FilterExpression: filterExpressionParts.join(" AND "),
-          ExpressionAttributeValues: expressionAttributeValues,
-          ExpressionAttributeNames: expressionAttributeNames,
+      if (senders.length > 0) {
+        const senderFilters = senders.map((_, index) => {
+          const key = `:sender${index}`;
+          expressionAttributeValues[key] = senders[index];
+          return `#from = ${key}`;
         });
+        filterExpressionParts.push(`(${senderFilters.join(" OR ")})`);
+      }
 
-        const response = await docClient.send(command);
+      const command = new ScanCommand({
+        TableName: MESSAGES_TABLE_NAME,
+        FilterExpression: filterExpressionParts.join(" AND "),
+        ExpressionAttributeValues: expressionAttributeValues,
+        ExpressionAttributeNames: expressionAttributeNames,
+      });
 
-        if (!response.Items || response.Items.length === 0) {
-          throw new Error("No matching SMS found");
-        }
+      const response = await docClient.send(command);
 
-        const messages = SmsResponseSchema.parse(response.Items);
-        const message = messages.sort((a, b) => b.created_at - a.created_at)[0];
+      if (!response.Items || response.Items.length === 0) {
+        throw new Error("No matching SMS found");
+      }
 
-        if (!message) {
-          throw new Error("No matching SMS found");
-        }
+      const messages = SmsResponseSchema.parse(response.Items);
+      const message = messages.sort((a, b) => b.created_at - a.created_at)[0];
 
-        const code = message.message.match(regex)?.[0];
-        if (!code) {
-          throw new Error("2FA code not found in SMS");
-        }
+      if (!message) {
+        throw new Error("No matching SMS found");
+      }
 
-        logger.debug("Found 2FA code in SMS, deleting message");
+      const code = message.message.match(regex)?.[0];
+      if (!code) {
+        throw new Error("2FA code not found in SMS");
+      }
 
-        await docClient.send(
-          new DeleteCommand({
-            TableName: MESSAGES_TABLE_NAME,
-            Key: {
-              id: message.id,
-            },
-          }),
-        );
+      logger.debug("Found 2FA code in SMS, deleting message");
 
-        return code;
+      await docClient.send(
+        new DeleteCommand({
+          TableName: MESSAGES_TABLE_NAME,
+          Key: {
+            id: message.id,
+          },
+        }),
+      );
+
+      return code;
     },
     {
       retries: 60,

@@ -53,7 +53,9 @@ export class Tangerine extends Bank {
   }
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
-    logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
+    logger.debug(
+      `Fetching transactions for account ${account.name} (ID: ${account.id})`,
+    );
     const response = await fetch(
       "https://secure.tangerine.ca/web/rest/pfm/v1/transactions?" +
         new URLSearchParams({

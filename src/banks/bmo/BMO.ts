@@ -63,7 +63,9 @@ export class BMO extends Bank {
 
   private async fetchTransactions(account: z.infer<typeof Account>) {
     if (account._type === "BANK_ACCOUNT") {
-      logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
+      logger.debug(
+        `Fetching transactions for account ${account.name} (ID: ${account.id})`,
+      );
       const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getBankAccountDetails",
         {
@@ -106,7 +108,9 @@ export class BMO extends Bank {
       );
       return transactions;
     } else if (account._type === "CREDIT_CARD") {
-      logger.debug(`Fetching transactions for account ${account.name} (ID: ${account.id})`);
+      logger.debug(
+        `Fetching transactions for account ${account.name} (ID: ${account.id})`,
+      );
       const response = await fetch(
         "https://www1.bmo.com/banking/services/accountdetails/getCCAccountDetails",
         {

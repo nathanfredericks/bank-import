@@ -92,8 +92,12 @@ export class RogersBank extends Bank {
 
     if (isLoginRequired) {
       logger.debug("Filling in username and password");
-      await page.getByRole("textbox", { name: "Username" }).pressSequentially(username);
-      await page.getByRole("textbox", { name: "Password" }).pressSequentially(password);
+      await page
+        .getByRole("textbox", { name: "Username" })
+        .pressSequentially(username);
+      await page
+        .getByRole("textbox", { name: "Password" })
+        .pressSequentially(password);
       await page.getByRole("checkbox", { name: "Remember me" }).check();
       await page.getByRole("button", { name: "Sign in" }).click();
 
