@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
+import { BrowserContext, chromium, LaunchOptions, Page } from "patchright";
 import * as tar from "tar";
 import { z } from "zod";
 import env from "../utils/env";
@@ -58,12 +58,7 @@ export class Bank {
 
     logger.debug("Launching browser");
     const options: LaunchOptions = {
-      headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-      ],
+      headless: false
     };
     if (env.HTTP_PROXY) {
       options.proxy = {
