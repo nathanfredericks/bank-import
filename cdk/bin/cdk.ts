@@ -29,10 +29,10 @@ const timezone = ssm.StringParameter.valueForStringParameter(
   "/bank-import/timezone",
 );
 
-const tailscaleExitNode = ssm.StringParameter.valueForStringParameter(
-  stack,
-  "/bank-import/tailscale-exit-node",
-);
+// const tailscaleExitNode = ssm.StringParameter.valueForStringParameter(
+//   stack,
+//   "/bank-import/tailscale-exit-node",
+// );
 
 const ynabBudgetId = ssm.StringParameter.valueForStringParameter(
   stack,
@@ -130,32 +130,32 @@ function createBankSchedule(
     },
   );
 
-  const tailscaleContainer = taskDefinition.addContainer("tailscale", {
-    image: ecs.ContainerImage.fromRegistry("tailscale/tailscale:latest"),
-    stopTimeout: cdk.Duration.minutes(2),
-    secrets: {
-      TS_AUTHKEY: ecs.Secret.fromSecretsManager(
-        bankImportSecret,
-        "TAILSCALE_AUTH_KEY",
-      ),
-    },
-    environment: {
-      TS_EXTRA_ARGS: `--advertise-tags=tag:container --exit-node=${tailscaleExitNode}`,
-      TS_OUTBOUND_HTTP_PROXY_LISTEN: ":1055",
-      TS_ENABLE_HEALTH_CHECK: "true",
-      TS_LOCAL_ADDR_PORT: "127.0.0.1:9002",
-    },
-    healthCheck: {
-      command: [
-        "CMD-SHELL",
-        "wget -q --spider http://127.0.0.1:9002/healthz || exit 1",
-      ],
-      interval: cdk.Duration.seconds(10),
-      retries: 5,
-      startPeriod: cdk.Duration.seconds(10),
-      timeout: cdk.Duration.seconds(5),
-    },
-  });
+  // const tailscaleContainer = taskDefinition.addContainer("tailscale", {
+  //   image: ecs.ContainerImage.fromRegistry("tailscale/tailscale:latest"),
+  //   stopTimeout: cdk.Duration.minutes(2),
+  //   secrets: {
+  //     TS_AUTHKEY: ecs.Secret.fromSecretsManager(
+  //       bankImportSecret,
+  //       "TAILSCALE_AUTH_KEY",
+  //     ),
+  //   },
+  //   environment: {
+  //     TS_EXTRA_ARGS: `--advertise-tags=tag:container --exit-node=${tailscaleExitNode}`,
+  //     TS_OUTBOUND_HTTP_PROXY_LISTEN: ":1055",
+  //     TS_ENABLE_HEALTH_CHECK: "true",
+  //     TS_LOCAL_ADDR_PORT: "127.0.0.1:9002",
+  //   },
+  //   healthCheck: {
+  //     command: [
+  //       "CMD-SHELL",
+  //       "wget -q --spider http://127.0.0.1:9002/healthz || exit 1",
+  //     ],
+  //     interval: cdk.Duration.seconds(10),
+  //     retries: 5,
+  //     startPeriod: cdk.Duration.seconds(10),
+  //     timeout: cdk.Duration.seconds(5),
+  //   },
+  // });
 
   const bankImportContainer = taskDefinition.addContainer("bank-import", {
     image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, "../.."), {
@@ -170,7 +170,7 @@ function createBankSchedule(
       AWS_S3_USER_DATA_BUCKET_NAME: userDataBucket.bucketName,
       AWS_SECRET_ARN: secretArn,
       AWS_DYNAMODB_MESSAGES_TABLE_NAME: messagesTableName,
-      HTTP_PROXY: "http://localhost:1055",
+      // HTTP_PROXY: "http://localhost:1055",
     },
     logging: ecs.LogDrivers.awsLogs({
       streamPrefix: id,
@@ -180,10 +180,10 @@ function createBankSchedule(
     }),
   });
 
-  bankImportContainer.addContainerDependencies({
-    container: tailscaleContainer,
-    condition: ecs.ContainerDependencyCondition.HEALTHY,
-  });
+  // bankImportContainer.addContainerDependencies({
+  //   container: tailscaleContainer,
+  //   condition: ecs.ContainerDependencyCondition.HEALTHY,
+  // });
 
   taskDefinition.addToTaskRolePolicy(
     new iam.PolicyStatement({
@@ -288,7 +288,7 @@ function createBankSchedule(
   });
 }
 
-// createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
+createBankSchedule("bmo", "BMO", "cron(0 0/4 * * ? *)", timezone);
 
 createBankSchedule(
   "rogers-bank",
