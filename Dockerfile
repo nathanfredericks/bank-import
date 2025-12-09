@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.57.0-noble AS base
+FROM mcr.microsoft.com/playwright:v1.56.0-noble AS base
 
 RUN apt-get update
 RUN apt-get install -y unzip
