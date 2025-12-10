@@ -12,7 +12,7 @@ export class NBDB extends Bank {
   public static async create(userID: string, password: string) {
     const nbdb = new NBDB();
     try {
-      await nbdb.launchBrowser(false);
+      await nbdb.launchBrowser();
       await nbdb.login(userID, password);
       await nbdb.closeBrowser();
     } catch (error) {
@@ -45,15 +45,13 @@ export class NBDB extends Bank {
 
   private async login(userID: string, password: string) {
     const page = await this.getPage();
+
+    await page.route('https://sdk.privacy-center.org/**', route => route.abort());
+
     logger.debug("Navigating to NBDB login page");
     await page.goto("https://client.bnc.ca/nbdb/login");
 
-    try {
-      logger.debug("Accepting cookies");
-      await page.getByText("Accept").click({
-        timeout: 3000,
-      });
-    } catch {}
+    await page.waitForSelector("#password-hidden");
 
     const userIDTextbox = page.getByRole("textbox", {
       name: "Enter your user ID",
