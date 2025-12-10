@@ -13,7 +13,7 @@ export class RogersBank extends Bank {
   public static async create(username: string, password: string) {
     const rogersBank = new RogersBank();
     try {
-      await rogersBank.launchBrowser(true);
+      await rogersBank.launchBrowser();
       await rogersBank.login(username, password);
       await rogersBank.closeBrowser();
     } catch (error) {
@@ -172,6 +172,10 @@ export class RogersBank extends Bank {
       }
     }
 
+    if (!isLoginRequired) {
+      page.reload();
+    }
+    
     logger.debug("Waiting for response");
     const response = await page.waitForResponse(
       (response) =>
