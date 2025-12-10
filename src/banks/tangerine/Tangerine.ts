@@ -87,14 +87,19 @@ export class Tangerine extends Bank {
   private async login(loginID: string, password: string) {
     const page = await this.getPage();
 
+    await page.route(
+      "https://www.tangerine.ca/etc.clientlibs/tangerine/clientlibs/clientlib-onetrust/**",
+      (route) => route.abort(),
+    );
+    await page.route(
+      "https://www.tangerine.ca/app/assets/js/oneTrust/**",
+      (route) => route.abort(),
+    );
+
     logger.debug("Navigating to Tangerine login page");
     await page.goto(
       "https://www.tangerine.ca/app/#/login/login-id?locale=en_CA",
     );
-
-    logger.debug("Accepting cookies");
-    await page.waitForSelector("#onetrust-accept-btn-handler");
-    await page.click("#onetrust-accept-btn-handler");
 
     logger.debug("Filling in login ID");
     await page.getByRole("textbox", { name: "Login ID" }).fill(loginID);
