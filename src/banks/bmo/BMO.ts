@@ -20,11 +20,11 @@ export class BMO extends Bank {
     super(BankName.BMO);
   }
 
-  public static async create(cardNumber: string, password: string) {
+  public static async create(loginID: string, password: string) {
     const bmo = new BMO();
     try {
       await bmo.launchBrowser(true);
-      await bmo.login(cardNumber, password);
+      await bmo.login(loginID, password);
       await bmo.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
@@ -213,7 +213,7 @@ export class BMO extends Bank {
     );
   }
 
-  private async login(cardNumber: string, password: string) {
+  private async login(loginID: string, password: string) {
     const page = await this.getPage();
     logger.debug("Navigating to BMO login page");
     await page.goto("https://www1.bmo.com/banking/digital/login");
@@ -221,7 +221,7 @@ export class BMO extends Bank {
     logger.debug("Filling in card number and password");
     await page
       .getByRole("textbox", { name: "Card number or Login ID" })
-      .pressSequentially(cardNumber);
+      .pressSequentially(loginID);
     await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
 

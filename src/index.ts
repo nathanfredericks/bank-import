@@ -11,7 +11,7 @@ import { importTransactions, updateAccountBalances } from "./ynab";
 switch (env.BANK) {
   case BankName.BMO:
     logger.info("Importing transactions from BMO");
-    const bmo = await BMO.create(secrets.BMO_CARD_NUMBER, secrets.BMO_PASSWORD);
+    const bmo = await BMO.create(secrets.BMO_LOGIN_ID, secrets.BMO_PASSWORD);
     const bmoAccounts = await bmo.getAccounts();
     await importTransactions(bmoAccounts);
     logger.info("Imported transactions from BMO");
@@ -23,13 +23,6 @@ switch (env.BANK) {
       secrets.ROGERS_BANK_PASSWORD,
     );
     const rogersBankAccounts = await rogersBank.getAccounts();
-    if (!rogersBankAccounts.length) {
-      if (rogersBank.isCaptchaLowScore()) {
-        logger.info("CAPTCHA low score detected, exiting silently");
-        break;
-      }
-      throw new Error("Error fetching accounts from Rogers Bank");
-    }
     await importTransactions(rogersBankAccounts);
     logger.info("Imported transactions from Rogers Bank");
     break;

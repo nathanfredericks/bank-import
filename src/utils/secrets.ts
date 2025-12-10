@@ -26,7 +26,7 @@ const { SecretString } = await secretsManagerClient.send(
 );
 
 const Secrets = z.object({
-  BMO_CARD_NUMBER: z.string(),
+  BMO_LOGIN_ID: z.string(),
   BMO_PASSWORD: z.string(),
   ROGERS_BANK_USERNAME: z.string(),
   ROGERS_BANK_PASSWORD: z.string(),
