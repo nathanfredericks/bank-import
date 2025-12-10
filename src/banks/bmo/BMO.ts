@@ -23,7 +23,7 @@ export class BMO extends Bank {
   public static async create(loginID: string, password: string) {
     const bmo = new BMO();
     try {
-      await bmo.launchBrowser(true);
+      await bmo.launchBrowser();
       await bmo.login(loginID, password);
       await bmo.closeBrowser();
     } catch (error) {
