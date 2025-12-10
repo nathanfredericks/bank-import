@@ -102,7 +102,7 @@ export class Tangerine extends Bank {
     );
 
     logger.debug("Filling in login ID");
-    await page.getByRole("textbox", { name: "Login ID" }).fill(loginID);
+    await page.getByRole("textbox", { name: "Login ID" }).pressSequentially(loginID);
     await page.getByRole("button", { name: "Next" }).click();
 
     logger.debug("Filling in password");
@@ -117,6 +117,7 @@ export class Tangerine extends Bank {
     });
     await page.getByRole("textbox", { name: "Security Code" }).fill(code);
     await page.getByRole("checkbox", { name: "Skip on this device" }).check();
+    await page.waitForTimeout(1000);
     await page.getByRole("button", { name: "Log In" }).click();
 
     const accounts = await this.fetchAccounts();
