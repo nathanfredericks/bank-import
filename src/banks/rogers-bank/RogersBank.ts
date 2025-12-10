@@ -6,8 +6,6 @@ import { BankName } from "../types";
 import { AccountResponse, TransactionsResponse } from "./schemas";
 
 export class RogersBank extends Bank {
-  private captchaLowScore = false;
-
   constructor() {
     super(BankName.RogersBank);
   }
@@ -17,7 +15,7 @@ export class RogersBank extends Bank {
     try {
       await rogersBank.launchBrowser(true);
       await rogersBank.login(username, password);
-      await rogersBank.closeBrowser(undefined, rogersBank.isCaptchaLowScore());
+      await rogersBank.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await rogersBank.handleError(error);
@@ -82,6 +80,52 @@ export class RogersBank extends Bank {
 
   private async login(username: string, password: string): Promise<void> {
     const page = await this.getPage();
+
+    await page.route(
+      "https://selfserve.apis.rogersbank.com/**",
+      async (route) => {
+        const request = route.request();
+        const postData = request.postData();
+
+        const headers = await request.allHeaders();
+        let headersModified = false;
+
+        if (headers.channel === "101") {
+          headers.channel = "201";
+          headersModified = true;
+        }
+
+        let modifiedPostData = postData;
+        let bodyModified = false;
+
+        if (postData) {
+          try {
+            const data = JSON.parse(postData);
+
+            if (data.channel === "101") {
+              data.channel = "201";
+              bodyModified = true;
+            }
+
+            if (data.recaptchaToken) {
+              delete data.recaptchaToken;
+              bodyModified = true;
+            }
+
+            if (bodyModified) {
+              modifiedPostData = JSON.stringify(data);
+            }
+          } catch {}
+        }
+
+        if (headersModified || bodyModified) {
+          await route.continue({ headers, postData: modifiedPostData });
+        } else {
+          await route.continue();
+        }
+      },
+    );
+
     logger.debug("Navigating to Rogers Bank home page");
     await page.goto("https://selfserve.rogersbank.com/home");
 
@@ -91,7 +135,6 @@ export class RogersBank extends Bank {
     ]);
 
     if (isLoginRequired) {
-      logger.debug("Filling in username and password");
       await page
         .getByRole("textbox", { name: "Username" })
         .pressSequentially(username);
@@ -101,31 +144,15 @@ export class RogersBank extends Bank {
       await page.getByRole("checkbox", { name: "Remember me" }).check();
       await page.getByRole("button", { name: "Sign in" }).click();
 
-      logger.debug("Waiting for response");
       const response = await page.waitForResponse(
         (response) =>
           response
             .url()
             .startsWith(
-              "https://selfserve.apis.rogersbank.com/v1/authenticate",
+              "https://selfserve.apis.rogersbank.com/v1/authenticate/user/",
             ) && response.request().method() === "POST",
       );
-
       const isTwoFactorAuthenticationRequired = response.status() === 412;
-
-      if (response.status() === 401) {
-        try {
-          const json = await response.json();
-          if (json.errorCode === "ERR_401_RECAPTCHA_LOW_SCORE") {
-            logger.debug(
-              "ReCAPTCHA low score detected, deleting user data and failing silently",
-            );
-            this.captchaLowScore = true;
-            await this.deleteUserData();
-            return;
-          }
-        } catch (error) {}
-      }
 
       if (isTwoFactorAuthenticationRequired) {
         logger.debug("Two-factor authentication required");
@@ -171,9 +198,5 @@ export class RogersBank extends Bank {
         transactions,
       },
     ]);
-  }
-
-  public isCaptchaLowScore(): boolean {
-    return this.captchaLowScore;
   }
 }
