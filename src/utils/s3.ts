@@ -6,6 +6,7 @@ import {
   S3Client,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import { writeFile } from "fs/promises";
 import env from "./env";
 import logger from "./logger";
 
@@ -58,7 +59,7 @@ async function downloadFile(
   }
 
   const bytes = await response.Body.transformToByteArray();
-  await Bun.write(path, bytes);
+  await writeFile(path, bytes);
 
   logger.debug(`Successfully downloaded file from S3 bucket: ${key}`);
 }
