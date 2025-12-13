@@ -178,6 +178,7 @@ function createBankSchedule(
       mode: ecs.AwsLogDriverMode.NON_BLOCKING,
       maxBufferSize: cdk.Size.mebibytes(25),
     }),
+    essential: true,
   });
 
   taskDefinition.addContainer("timeout", {
