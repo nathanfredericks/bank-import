@@ -175,7 +175,7 @@ export class RogersBank extends Bank {
     if (!isLoginRequired) {
       page.reload();
     }
-    
+
     logger.debug("Waiting for response");
     const response = await page.waitForResponse(
       (response) =>

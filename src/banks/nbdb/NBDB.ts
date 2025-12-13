@@ -46,7 +46,9 @@ export class NBDB extends Bank {
   private async login(userID: string, password: string) {
     const page = await this.getPage();
 
-    await page.route('https://sdk.privacy-center.org/**', route => route.abort());
+    await page.route("https://sdk.privacy-center.org/**", (route) =>
+      route.abort(),
+    );
 
     logger.debug("Navigating to NBDB login page");
     await page.goto("https://client.bnc.ca/nbdb/login");
