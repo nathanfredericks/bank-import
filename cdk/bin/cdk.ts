@@ -180,6 +180,14 @@ function createBankSchedule(
     }),
   });
 
+  taskDefinition.addContainer("timeout", {
+    image: ecs.ContainerImage.fromRegistry(
+      "public.ecr.aws/docker/library/alpine:latest",
+    ),
+    command: ["sh", "-c", "sleep 300"],
+    essential: true,
+  });
+
   // bankImportContainer.addContainerDependencies({
   //   container: tailscaleContainer,
   //   condition: ecs.ContainerDependencyCondition.HEALTHY,
