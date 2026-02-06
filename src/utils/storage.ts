@@ -1,18 +1,18 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import logger from "./logger";
 
-async function uploadFile(
+async function saveFile(
   basePath: string,
   key?: string,
   _contentType?: string,
   body?: Buffer | Uint8Array | string,
 ) {
   if (!key) {
-    throw new Error("Key is required for upload");
+    throw new Error("Key is required for save");
   }
   const filePath = join(basePath, key);
-  logger.debug(`Uploading file to: ${filePath}`);
+  logger.debug(`Saving file to: ${filePath}`);
 
   await mkdir(dirname(filePath), { recursive: true });
 
@@ -21,31 +21,11 @@ async function uploadFile(
   } else if (typeof body === "string") {
     await writeFile(filePath, body);
   } else {
-    throw new Error("Unsupported body type for upload");
+    throw new Error("Unsupported body type for save");
   }
 
-  logger.debug(`Uploaded file to: ${filePath}`);
+  logger.debug(`Saved file to: ${filePath}`);
 }
 
-async function downloadFile(
-  basePath: string,
-  key: string,
-  destinationPath: string,
-): Promise<void> {
-  const filePath = join(basePath, key);
-  logger.debug(`Downloading file from: ${filePath}`);
 
-  const content = await readFile(filePath);
-  await writeFile(destinationPath, content);
-
-  logger.debug(`Successfully downloaded file from: ${filePath}`);
-}
-
-async function deleteFile(basePath: string, key: string): Promise<void> {
-  const filePath = join(basePath, key);
-  logger.debug(`Deleting file: ${filePath}`);
-  await unlink(filePath);
-  logger.debug(`Successfully deleted file: ${filePath}`);
-}
-
-export { deleteFile, downloadFile, uploadFile };
+export { saveFile };

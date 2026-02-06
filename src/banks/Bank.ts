@@ -1,15 +1,14 @@
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
-import * as tar from "tar";
 import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { sendNotification } from "../utils/pushover";
-import { deleteFile, downloadFile, uploadFile } from "../utils/storage";
+import { saveFile } from "../utils/storage";
 import { Account, BankName, bankNames } from "./types";
 
 export class Bank {
@@ -25,36 +24,9 @@ export class Bank {
   }
 
   protected async launchBrowser(skipUserDataDownload = false) {
-    this.userDataDir = await mkdtemp(join(tmpdir(), `user-data-`));
-    logger.debug(`Created temporary user data directory: ${this.userDataDir}`);
-
-    if (!skipUserDataDownload) {
-      const archiveDir = await mkdtemp(join(tmpdir(), `archive-`));
-      logger.debug(`Created temporary archive directory: ${archiveDir}`);
-      const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
-
-      try {
-        await downloadFile(
-          env.USER_DATA_PATH,
-          `${this.bank}.tar.gz`,
-          archivePath,
-        );
-        logger.debug(
-          `Extracting user data from ${archivePath} to ${this.userDataDir}`,
-        );
-        await tar.x({
-          file: archivePath,
-          cwd: this.userDataDir,
-        });
-        logger.debug(
-          `Successfully downloaded and extracted user data for ${this.bank}`,
-        );
-      } catch {
-        logger.debug(`No existing user data found for ${this.bank}`);
-      }
-    } else {
-      logger.debug(`Skipping user data download for ${this.bank}`);
-    }
+    this.userDataDir = join(env.USER_DATA_PATH, this.bank);
+    await mkdir(this.userDataDir, { recursive: true });
+    logger.debug(`Using user data directory: ${this.userDataDir}`);
 
     logger.debug("Launching browser");
     const options: LaunchOptions = {
@@ -87,37 +59,6 @@ export class Bank {
     logger.debug("Closing browser");
     await this.page?.context().browser()?.close();
     this.page = null;
-
-    if (this.userDataDir && !tracingFilePath && !skipUserDataDownload) {
-      try {
-        const archiveDir = await mkdtemp(join(tmpdir(), "archive-"));
-        logger.debug(`Created temporary archive directory: ${archiveDir}`);
-        const archivePath = join(archiveDir, `${this.bank}.tar.gz`);
-        logger.debug(`Creating user data archive at ${archivePath}`);
-        await tar.c(
-          {
-            gzip: true,
-            file: archivePath,
-            cwd: this.userDataDir,
-          },
-          ["."],
-        );
-        const archiveBuffer = await readFile(archivePath);
-        await uploadFile(
-          env.USER_DATA_PATH,
-          `${this.bank}.tar.gz`,
-          "application/gzip",
-          archiveBuffer,
-        );
-        logger.debug(`Successfully uploaded user data for ${this.bank}.`);
-      } catch (error) {
-        logger.error(
-          `Failed to archive and upload user data directory for ${this.bank}: ${error}`,
-        );
-      }
-    } else if (this.userDataDir && !tracingFilePath && skipUserDataDownload) {
-      logger.debug(`Skipping user data upload for ${this.bank}`);
-    }
   }
 
   protected async startTracing() {
@@ -140,8 +81,11 @@ export class Bank {
     const traceFilePath = getTraceFilePath(traceFileName);
     await this.closeBrowser(traceFilePath);
     logger.info(`Saved trace to ${traceFilePath}`);
+    
+    await this.deleteUserData();
+    
     const traceFile = await readFile(traceFilePath);
-    await uploadFile(
+    await saveFile(
       env.TRACES_PATH,
       traceFileName,
       "application/zip",
@@ -192,13 +136,17 @@ export class Bank {
   }
 
   protected async deleteUserData() {
+    if (!this.userDataDir) {
+      logger.debug(`No user data directory to delete for ${this.bank}`);
+      return;
+    }
     try {
-      logger.debug(`Deleting user data for ${this.bank}`);
-      await deleteFile(env.USER_DATA_PATH, `${this.bank}.tar.gz`);
+      logger.debug(`Deleting user data directory for ${this.bank}: ${this.userDataDir}`);
+      await rm(this.userDataDir, { recursive: true, force: true });
       logger.debug(`Successfully deleted user data for ${this.bank}`);
     } catch (error) {
       logger.debug(
-        `No user data found to delete for ${this.bank} or deletion failed: ${error}`,
+        `Failed to delete user data for ${this.bank}: ${error}`,
       );
     }
   }
