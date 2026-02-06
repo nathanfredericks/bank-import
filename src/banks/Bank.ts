@@ -9,7 +9,7 @@ import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { sendNotification } from "../utils/pushover";
-import { deleteFile, downloadFile, uploadFile } from "../utils/s3";
+import { deleteFile, downloadFile, uploadFile } from "../utils/storage";
 import { Account, BankName, bankNames } from "./types";
 
 export class Bank {
@@ -35,7 +35,7 @@ export class Bank {
 
       try {
         await downloadFile(
-          env.AWS_S3_USER_DATA_BUCKET_NAME,
+          env.USER_DATA_PATH,
           `${this.bank}.tar.gz`,
           archivePath,
         );
@@ -104,7 +104,7 @@ export class Bank {
         );
         const archiveBuffer = await readFile(archivePath);
         await uploadFile(
-          env.AWS_S3_USER_DATA_BUCKET_NAME,
+          env.USER_DATA_PATH,
           `${this.bank}.tar.gz`,
           "application/gzip",
           archiveBuffer,
@@ -142,7 +142,7 @@ export class Bank {
     logger.info(`Saved trace to ${traceFilePath}`);
     const traceFile = await readFile(traceFilePath);
     await uploadFile(
-      env.AWS_S3_TRACES_BUCKET_NAME,
+      env.TRACES_PATH,
       traceFileName,
       "application/zip",
       traceFile,
@@ -194,7 +194,7 @@ export class Bank {
   protected async deleteUserData() {
     try {
       logger.debug(`Deleting user data for ${this.bank}`);
-      await deleteFile(env.AWS_S3_USER_DATA_BUCKET_NAME, `${this.bank}.tar.gz`);
+      await deleteFile(env.USER_DATA_PATH, `${this.bank}.tar.gz`);
       logger.debug(`Successfully deleted user data for ${this.bank}`);
     } catch (error) {
       logger.debug(
