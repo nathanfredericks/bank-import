@@ -3,3 +3,4 @@ cdk/cdk.out
 dist
 node_modules
 traces/*.zip
+user-data

@@ -1,5 +1,5 @@
 import { formatISO, subDays } from "date-fns";
-import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -157,12 +157,11 @@ export class RogersBank extends Bank {
       if (isTwoFactorAuthenticationRequired) {
         logger.debug("Two-factor authentication required");
         logger.debug("Filling in two-factor authentication code");
-        await page.getByRole("radio", { name: "@" }).click();
+        await page.getByRole("radio", { name: "+" }).click();
         await page.getByRole("button", { name: "Send code" }).click();
-        const code = await getEmailTwoFactorAuthenticationCode({
+        const code = await getSMSTwoFactorAuthenticationCode({
           afterDate: this.date,
-          sender: "onlineservices@RogersBank.com",
-          subject: "Your verification code",
+          sender: "74979",
           regex: /\b\d{8}\b/,
         });
         await page
