@@ -44,6 +44,26 @@ const Transaction = z
     };
   });
 
+const PendingTransaction = z
+  .object({
+    activityId: z.string(),
+    amount: z.object({
+      value: z.coerce.number(),
+    }),
+    merchant: z.object({
+      name: z.string(),
+    }),
+    date: z.string(),
+    cardNumber: z.string(),
+  })
+  .transform((transaction) => ({
+    activityId: transaction.activityId,
+    amount: transaction.amount.value,
+    merchant: transaction.merchant.name,
+    date: transaction.date,
+    cardNumber: transaction.cardNumber,
+  }));
+
 const TransactionsResponse = z
   .object({
     activitySummary: z.object({
@@ -56,4 +76,18 @@ const TransactionsResponse = z
   })
   .transform(({ activitySummary }) => activitySummary.activities);
 
-export { AccountResponse, TransactionsResponse };
+const PendingTransactionsResponse = z
+  .object({
+    activitySummary: z.object({
+      activities: z.preprocess(
+        (transactions: any) =>
+          transactions.filter(
+            (transaction: any) => transaction.activityStatus === "PENDING",
+          ),
+        z.array(PendingTransaction),
+      ),
+    }),
+  })
+  .transform(({ activitySummary }) => activitySummary.activities);
+
+export { AccountResponse, PendingTransactionsResponse, TransactionsResponse };

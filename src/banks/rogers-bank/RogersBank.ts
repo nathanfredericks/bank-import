@@ -1,9 +1,45 @@
+import { DynamoDBClient, DynamoDBClientConfig } from "@aws-sdk/client-dynamodb";
+import {
+  BatchGetCommand,
+  BatchWriteCommand,
+  DynamoDBDocumentClient,
+} from "@aws-sdk/lib-dynamodb";
 import { formatISO, subDays } from "date-fns";
 import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
+import env from "../../utils/env";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
-import { AccountResponse, TransactionsResponse } from "./schemas";
+import {
+  AccountResponse,
+  PendingTransactionsResponse,
+  TransactionsResponse,
+} from "./schemas";
+
+const PENDING_TRANSACTIONS_TABLE_NAME =
+  env.AWS_DYNAMODB_PENDING_TRANSACTIONS_TABLE_NAME;
+const ROGERS_BANK_WEBHOOK_NAME = "rogers-bank-webhook";
+const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+const MAX_BATCH_GET_KEYS = 100;
+const MAX_BATCH_WRITE_ITEMS = 25;
+const CARD_LAST4_LENGTH = 4;
+
+const config: DynamoDBClientConfig = {};
+
+if (
+  env.AWS_ACCESS_KEY_ID &&
+  env.AWS_SECRET_ACCESS_KEY &&
+  env.AWS_DEFAULT_REGION
+) {
+  config.credentials = {
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  };
+  config.region = env.AWS_DEFAULT_REGION;
+}
+
+const client = new DynamoDBClient(config);
+const docClient = DynamoDBDocumentClient.from(client);
 
 export class RogersBank extends Bank {
   constructor() {
@@ -24,6 +60,165 @@ export class RogersBank extends Bank {
       }
     }
     return rogersBank;
+  }
+
+  private async processPendingTransactions(rawTransactions: unknown) {
+    const pendingTransactions = PendingTransactionsResponse.parse(rawTransactions);
+
+    if (!pendingTransactions.length) {
+      logger.debug("No pending Rogers Bank transactions found");
+      return;
+    }
+
+    logger.info(
+      `Processing ${pendingTransactions.length} pending Rogers Bank transaction(s)`,
+    );
+
+    const uniquePendingTransactions = Array.from(
+      new Map(
+        pendingTransactions.map((transaction) => [transaction.activityId, transaction]),
+      ).values(),
+    );
+
+    logger.info(
+      `Deduplicated pending Rogers Bank transactions from ${pendingTransactions.length} raw to ${uniquePendingTransactions.length} unique`,
+    );
+
+    const seenActivityIds = new Set<string>();
+
+    for (
+      let i = 0;
+      i < uniquePendingTransactions.length;
+      i += MAX_BATCH_GET_KEYS
+    ) {
+      const batch = uniquePendingTransactions.slice(i, i + MAX_BATCH_GET_KEYS);
+      const response = await docClient.send(
+        new BatchGetCommand({
+          RequestItems: {
+            [PENDING_TRANSACTIONS_TABLE_NAME]: {
+              Keys: batch.map(({ activityId }) => ({ activityId })),
+              ProjectionExpression: "activityId",
+            },
+          },
+        }),
+      );
+
+      const items =
+        (response.Responses?.[PENDING_TRANSACTIONS_TABLE_NAME] as
+          | Array<{ activityId: string }>
+          | undefined) ?? [];
+
+      for (const item of items) {
+        seenActivityIds.add(item.activityId);
+      }
+
+      const unprocessedKeysCount =
+        response.UnprocessedKeys?.[PENDING_TRANSACTIONS_TABLE_NAME]?.Keys
+          ?.length ?? 0;
+      if (unprocessedKeysCount) {
+        logger.warn(
+          `BatchGet returned ${unprocessedKeysCount} unprocessed pending transaction key(s)`,
+        );
+      }
+    }
+
+    const newPendingTransactions = uniquePendingTransactions.filter(
+      ({ activityId }) => !seenActivityIds.has(activityId),
+    );
+
+    logger.info(
+      `Pending Rogers Bank transaction dedupe results: ${seenActivityIds.size} seen, ${newPendingTransactions.length} new`,
+    );
+
+    if (!newPendingTransactions.length) {
+      logger.info("No new pending Rogers Bank transactions to notify");
+      return;
+    }
+
+    const successfullyNotifiedActivityIds: string[] = [];
+
+    for (const transaction of newPendingTransactions) {
+      const last4 = transaction.cardNumber.slice(-CARD_LAST4_LENGTH);
+      const notification = `$${Math.abs(transaction.amount).toFixed(2)} at ${transaction.merchant} was approved on your ************${last4}`;
+
+      try {
+        const webhookResponse = await fetch(env.TRANSACTIONS_WEBHOOK_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            notification,
+            bank: ROGERS_BANK_WEBHOOK_NAME,
+          }),
+        });
+
+        if (!webhookResponse.ok) {
+          logger.error(
+            `Failed to send pending transaction webhook for activity ${transaction.activityId}: ${webhookResponse.status} ${webhookResponse.statusText}`,
+          );
+          continue;
+        }
+
+        successfullyNotifiedActivityIds.push(transaction.activityId);
+        logger.info(
+          `Sent pending transaction webhook for activity ${transaction.activityId}: $${Math.abs(transaction.amount).toFixed(2)} at ${transaction.merchant} on ************${last4}`,
+        );
+      } catch (error) {
+        logger.error(
+          `Failed to send pending transaction webhook for activity ${transaction.activityId}`,
+          error,
+        );
+      }
+    }
+
+    if (!successfullyNotifiedActivityIds.length) {
+      logger.warn(
+        "Pending Rogers Bank transactions were found, but no webhook notifications succeeded",
+      );
+      return;
+    }
+
+    const expiresAt = Math.floor(Date.now() / 1000) + SEVEN_DAYS_IN_SECONDS;
+
+    for (
+      let i = 0;
+      i < successfullyNotifiedActivityIds.length;
+      i += MAX_BATCH_WRITE_ITEMS
+    ) {
+      const batch = successfullyNotifiedActivityIds.slice(
+        i,
+        i + MAX_BATCH_WRITE_ITEMS,
+      );
+
+      const response = await docClient.send(
+        new BatchWriteCommand({
+          RequestItems: {
+            [PENDING_TRANSACTIONS_TABLE_NAME]: batch.map((activityId) => ({
+              PutRequest: {
+                Item: {
+                  activityId,
+                  expiresAt,
+                },
+              },
+            })),
+          },
+        }),
+      );
+
+      const unprocessedItemsCount =
+        response.UnprocessedItems?.[PENDING_TRANSACTIONS_TABLE_NAME]?.length ??
+        0;
+      if (unprocessedItemsCount) {
+        logger.warn(
+          `BatchWrite returned ${unprocessedItemsCount} unprocessed pending transaction item(s)`,
+        );
+      }
+    }
+
+    logger.info(
+      `Successfully sent ${successfullyNotifiedActivityIds.length} pending Rogers Bank transaction notification(s)`,
+    );
   }
 
   private async fetchTransactions(
@@ -69,6 +264,12 @@ export class RogersBank extends Bank {
     }
 
     const transactions = await transactionsResponse.json();
+
+    try {
+      await this.processPendingTransactions(transactions);
+    } catch (error) {
+      logger.error("Failed to process pending Rogers Bank transactions", error);
+    }
 
     const postedTransactions = TransactionsResponse.parse(transactions);
     logger.info(

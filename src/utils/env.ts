@@ -12,6 +12,8 @@ const Env = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_DEFAULT_REGION: z.string().optional(),
   AWS_DYNAMODB_MESSAGES_TABLE_NAME: z.string(),
+  AWS_DYNAMODB_PENDING_TRANSACTIONS_TABLE_NAME: z.string(),
+  TRANSACTIONS_WEBHOOK_URL: z.string(),
   HTTP_PROXY: z.string().optional(),
   BANK: z.enum(BankName),
   TRACES_PATH: z.string(),
