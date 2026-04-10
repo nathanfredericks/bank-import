@@ -14,6 +14,7 @@ const Env = z.object({
   AWS_DYNAMODB_MESSAGES_TABLE_NAME: z.string(),
   AWS_DYNAMODB_PENDING_TRANSACTIONS_TABLE_NAME: z.string(),
   TRANSACTIONS_WEBHOOK_URL: z.string(),
+  PENDING_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(true),
   HTTP_PROXY: z.string().optional(),
   BANK: z.enum(BankName),
   TRACES_PATH: z.string(),

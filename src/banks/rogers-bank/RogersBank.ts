@@ -265,10 +265,15 @@ export class RogersBank extends Bank {
 
     const transactions = await transactionsResponse.json();
 
-    try {
-      await this.processPendingTransactions(transactions);
-    } catch (error) {
-      logger.error("Failed to process pending Rogers Bank transactions", error);
+    if (env.PENDING_NOTIFICATIONS_ENABLED) {
+      try {
+        await this.processPendingTransactions(transactions);
+      } catch (error) {
+        logger.error(
+          "Failed to process pending Rogers Bank transactions",
+          error,
+        );
+      }
     }
 
     const postedTransactions = TransactionsResponse.parse(transactions);
