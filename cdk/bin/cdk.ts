@@ -287,7 +287,7 @@ function createBankSchedule(
         launchType: "FARGATE",
         networkConfiguration: {
           awsvpcConfiguration: {
-            subnets: vpc.publicSubnets.map((subnet) => subnet.subnetId),
+            subnets: vpc.publicSubnets.map((subnet: ec2.ISubnet) => subnet.subnetId),
             securityGroups: [taskSecurityGroup.securityGroupId],
             assignPublicIp: "ENABLED",
           },
