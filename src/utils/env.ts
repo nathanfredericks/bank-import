@@ -13,7 +13,6 @@ const Env = z.object({
   AWS_DEFAULT_REGION: z.string().optional(),
   AWS_DYNAMODB_MESSAGES_TABLE_NAME: z.string(),
   AWS_S3_TRACES_BUCKET_NAME: z.string(),
-  AWS_S3_USER_DATA_BUCKET_NAME: z.string(),
   AWS_SECRET_ARN: z.string(),
   HTTP_PROXY: z.string().optional(),
   BANK: z.enum(BankName),
