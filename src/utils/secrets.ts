@@ -1,4 +1,29 @@
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+  SecretsManagerClientConfig,
+} from "@aws-sdk/client-secrets-manager";
 import { z } from "zod";
+import env from "./env";
+
+const config: SecretsManagerClientConfig = {};
+if (
+  env.AWS_ACCESS_KEY_ID &&
+  env.AWS_SECRET_ACCESS_KEY &&
+  env.AWS_DEFAULT_REGION
+) {
+  config.region = env.AWS_DEFAULT_REGION;
+  config.credentials = {
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  };
+}
+const secretsManagerClient = new SecretsManagerClient(config);
+const { SecretString } = await secretsManagerClient.send(
+  new GetSecretValueCommand({
+    SecretId: env.AWS_SECRET_ARN,
+  }),
+);
 
 const Secrets = z.object({
   BMO_LOGIN_ID: z.string(),
@@ -15,4 +40,6 @@ const Secrets = z.object({
   JMAP_BEARER_TOKEN: z.string(),
 });
 
-export default Secrets.parse(Bun.env);
+const secretJson = JSON.parse(SecretString || "{}");
+
+export default Secrets.parse(secretJson);
