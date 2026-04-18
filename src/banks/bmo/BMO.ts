@@ -223,6 +223,7 @@ export class BMO extends Bank {
       .getByRole("textbox", { name: "Card number or Login ID" })
       .pressSequentially(loginID);
     await page.getByRole("textbox", { name: "Password" }).fill(password);
+    await page.getByRole("checkbox", { name: "Remember me" }).check();
     await page.getByRole("button", { name: "Sign in" }).click();
 
     logger.debug("Waiting for response");
