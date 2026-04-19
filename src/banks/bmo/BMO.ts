@@ -215,6 +215,12 @@ export class BMO extends Bank {
 
   private async login(loginID: string, password: string) {
     const page = await this.getPage();
+
+    await page.route(
+      "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location",
+      (route) => route.abort(),
+    );
+
     logger.debug("Navigating to BMO login page");
     await page.goto("https://www1.bmo.com/banking/digital/login");
 
@@ -222,8 +228,8 @@ export class BMO extends Bank {
     await page
       .getByRole("textbox", { name: "Card number or Login ID" })
       .pressSequentially(loginID);
-    await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("checkbox", { name: "Remember me" }).check();
+    await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
 
     logger.debug("Waiting for response");

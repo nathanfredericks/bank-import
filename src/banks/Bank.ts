@@ -1,9 +1,8 @@
+import { launchContext } from "cloakbrowser";
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { BrowserContext, chromium, LaunchOptions, Page } from "playwright";
+import { readFile } from "node:fs/promises";
+import { BrowserContext, Page } from "playwright-core";
 import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
@@ -17,34 +16,21 @@ export class Bank {
   private page: Page | null = null;
   protected date = new Date();
   private accounts: z.infer<typeof Account>[] = [];
-  private userDataDir: string | null = null;
 
   constructor(bank: BankName) {
     this.bank = bank;
   }
 
   protected async launchBrowser() {
-    this.userDataDir = await mkdtemp(join(tmpdir(), `user-data-`));
-    logger.debug(`Created temporary user data directory: ${this.userDataDir}`);
-
     logger.debug("Launching browser");
-    const options: LaunchOptions = {
+    this.context = await launchContext({
       headless: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-      ],
-    };
-    if (env.HTTP_PROXY) {
-      options.proxy = {
-        server: env.HTTP_PROXY,
-      };
-    }
-    this.context = await chromium.launchPersistentContext(
-      this.userDataDir,
-      options,
-    );
+      humanize: true,
+      humanPreset: "careful",
+      geoip: true,
+      timezone: "America/Halifax",
+      proxy: env.HTTP_PROXY,
+    });
     await this.startTracing();
     logger.debug("Creating new page");
     this.page = await this.context.newPage();

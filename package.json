@@ -24,10 +24,11 @@
     "@aws-sdk/client-secrets-manager": "^3.946.0",
     "@aws-sdk/lib-dynamodb": "^3.946.0",
     "@date-fns/tz": "^1.4.1",
+    "cloakbrowser": "^0.3.25",
     "date-fns": "^4.1.0",
     "html-to-text": "^9.0.5",
     "p-retry": "^7.1.0",
-    "playwright": "1.57.0",
+    "playwright-core": "^1.59.1",
     "uuid": "^13.0.0",
     "ynab": "^2.10.0",
     "zod": "^4.1.13"
