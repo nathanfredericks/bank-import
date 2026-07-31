@@ -18,6 +18,12 @@ const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const ecs = new ECSClient({});
 const tableName = process.env.AUTH_SESSIONS_TABLE_NAME;
 const publicDirectory = path.join(process.cwd(), "public");
+const bankNames = {
+  bmo: "BMO",
+  "rogers-bank": "Rogers Bank",
+  nbdb: "NBDB",
+  tangerine: "Tangerine",
+};
 const staticExtensions = new Set([".html", ".css", ".js", ".svg"]);
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -33,7 +39,12 @@ const json = (statusCode, body) => ({
 });
 const cookies = (event) =>
   Object.fromEntries(
-    (event.cookies?.join(";") || event.headers?.cookie || event.headers?.Cookie || "")
+    (
+      event.cookies?.join(";") ||
+      event.headers?.cookie ||
+      event.headers?.Cookie ||
+      ""
+    )
       .split(";")
       .map((value) => value.trim().split("=", 2))
       .filter(([name]) => name),
@@ -88,8 +99,7 @@ async function claimRecovery(session) {
       new UpdateCommand({
         TableName: tableName,
         Key: { id: session.id },
-        ConditionExpression:
-          "#stage IN (:timedOut, :failed, :cancelled)",
+        ConditionExpression: "#stage IN (:timedOut, :failed, :cancelled)",
         UpdateExpression:
           "SET #stage = :starting, #error = :empty REMOVE #connectionId",
         ExpressionAttributeNames: {
@@ -259,7 +269,7 @@ async function http(event) {
     return json(403, { error: "invalid request" });
   if (requestPath === "/api/challenge")
     return json(200, {
-      bank: session.bank,
+      bank: bankNames[session.bank] || "Your Bank",
       stage: session.stage,
       options: session.options,
       error: session.error,

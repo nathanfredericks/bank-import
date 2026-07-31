@@ -261,7 +261,25 @@ export class BMO extends Bank {
         throw new Error("Unsupported BMO verification method");
       }
       await page.getByRole("button", { name: "Next" }).click();
-      await page.getByRole("radio", { name: "SMS" }).click();
+      const smsRadio = page
+        .getByRole("radio", { name: /SMS|Text message/i })
+        .first();
+      const recentlyUpdatedContactsError = page.getByText(
+        /can[’']t receive a BMO Verification Code right now/i,
+      );
+      await Promise.race([
+        smsRadio.waitFor({ state: "visible" }),
+        recentlyUpdatedContactsError.waitFor({ state: "visible" }),
+      ]);
+      if (await recentlyUpdatedContactsError.isVisible()) {
+        await handoff.fail(
+          "BMO cannot send a verification code because your contact details were recently updated. Call the number on the back of your card for help.",
+        );
+        throw new Error(
+          "BMO verification is unavailable after recent contact detail changes",
+        );
+      }
+      await smsRadio.click();
       await page
         .getByRole("checkbox", {
           name: "IMPORTANT: To proceed, you must confirm you will not provide this verification code to anyone.",

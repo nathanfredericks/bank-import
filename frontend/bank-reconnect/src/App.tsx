@@ -114,6 +114,7 @@ export function App() {
 
   const stage = challenge?.stage ?? "preparing"
   const completed = stage === "completed"
+  const failed = stage === "failed"
   const expired = stage === "timed_out" || stage === "cancelled"
 
   return (
@@ -131,22 +132,26 @@ export function App() {
             {unauthorized
               ? "Reconnect Link Required"
               : completed
-              ? "You’re Connected"
-              : expired
-                ? "Reconnect Link Expired"
-                : "Continue Bank Login"}
+                ? "You’re Connected"
+                : failed
+                  ? "Unable to Continue"
+                  : expired
+                    ? "Reconnect Link Expired"
+                    : "Continue Bank Login"}
           </CardTitle>
           <CardDescription>
             {unauthorized
               ? "Open the secure reconnect link sent to you to continue."
               : completed
-              ? "Your session has been refreshed and transactions are importing."
-              : expired
-                ? "The next import will send a new link if verification is still needed."
-                : `Securely reconnect${challenge?.bank ? ` to ${challenge.bank}` : ""}.`}
+                ? "Your session has been refreshed and transactions are importing."
+                : failed
+                  ? `The secure sign-in${challenge?.bank ? ` to ${challenge.bank}` : ""} could not be completed.`
+                  : expired
+                    ? "Open the notification link again to start a fresh reconnect session."
+                    : `Securely reconnect${challenge?.bank ? ` to ${challenge.bank}` : ""}.`}
           </CardDescription>
         </CardHeader>
-          <CardContent className="space-y-4">
+        <CardContent className="space-y-4">
           {unauthorized ? (
             <Alert>
               <LockKeyhole />
@@ -158,94 +163,116 @@ export function App() {
             </Alert>
           ) : (
             <>
-          {actionError && (
-            <Alert variant="destructive">
-              <ShieldAlert />
-              <AlertTitle>Unable to Continue</AlertTitle>
-              <AlertDescription>{actionError}</AlertDescription>
-            </Alert>
-          )}
+              {actionError && (
+                <Alert variant="destructive">
+                  <ShieldAlert />
+                  <AlertTitle>Unable to Continue</AlertTitle>
+                  <AlertDescription>{actionError}</AlertDescription>
+                </Alert>
+              )}
 
-          {!challenge ||
-          stage === "awaiting_connection" ||
-          stage === "starting_recovery" ||
-          stage === "preparing" ? (
-            <Alert>
-              <LoaderCircle className="animate-spin" />
-              <AlertTitle>Preparing Verification</AlertTitle>
-              <AlertDescription>
-                Your secure bank session is starting.
-              </AlertDescription>
-            </Alert>
-          ) : null}
+              {failed && (
+                <Alert variant="destructive">
+                  <ShieldAlert />
+                  <AlertTitle>Verification Unavailable</AlertTitle>
+                  <AlertDescription>
+                    {challenge?.error ||
+                      "The bank login could not be completed. Try again later."}
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {stage === "awaiting_method" && (
-            <section className="space-y-3">
-              <p className="text-sm font-medium">
-                Choose how to receive your verification code.
-              </p>
-              {challenge?.options?.map((option) => (
-                <Button
-                  key={option.id}
-                  variant="outline"
-                  className="h-auto w-full justify-between rounded-2xl px-4 py-4"
-                  disabled={submitting}
-                  onClick={() => void chooseMethod(option.id)}
-                >
-                  <span className="flex items-center gap-3">
-                    {optionIcon(option)} {option.label}
-                  </span>
-                  <span aria-hidden="true">→</span>
-                </Button>
-              ))}
-            </section>
-          )}
+              {expired && (
+                <Alert>
+                  <ShieldAlert />
+                  <AlertTitle>Reconnect Session Ended</AlertTitle>
+                  <AlertDescription>
+                    Reopen the original notification link to start a new secure
+                    session.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {stage === "awaiting_code" && (
-            <form className="space-y-3" onSubmit={submitCode}>
-              <label className="grid gap-2 text-sm font-medium">
-                Verification code
-                <Input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]*"
-                  placeholder="Enter code"
-                  value={code}
-                  onChange={(event) =>
-                    setCode(event.target.value.replace(/\D/g, ""))
-                  }
-                  required
-                />
-              </label>
-              <Button
-                className="w-full"
-                disabled={submitting || code.length < 4}
-                type="submit"
-              >
-                {submitting ? "Submitting…" : "Submit code"}
-              </Button>
-            </form>
-          )}
+              {!challenge ||
+              stage === "awaiting_connection" ||
+              stage === "starting_recovery" ||
+              stage === "preparing" ? (
+                <Alert>
+                  <LoaderCircle className="animate-spin" />
+                  <AlertTitle>Preparing Verification</AlertTitle>
+                  <AlertDescription>
+                    Your secure bank session is starting.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-          {stage === "submitting_code" && (
-            <Alert>
-              <LoaderCircle className="animate-spin" />
-              <AlertTitle>Checking Your Code</AlertTitle>
-              <AlertDescription>
-                Keep this page open while we finish the secure sign-in.
-              </AlertDescription>
-            </Alert>
-          )}
+              {stage === "awaiting_method" && (
+                <section className="space-y-3">
+                  <p className="text-sm font-medium">
+                    Choose how to receive your verification code.
+                  </p>
+                  {challenge?.options?.map((option) => (
+                    <Button
+                      key={option.id}
+                      variant="outline"
+                      className="h-auto w-full justify-between rounded-2xl px-4 py-4"
+                      disabled={submitting}
+                      onClick={() => void chooseMethod(option.id)}
+                    >
+                      <span className="flex items-center gap-3">
+                        {optionIcon(option)} {option.label}
+                      </span>
+                      <span aria-hidden="true">→</span>
+                    </Button>
+                  ))}
+                </section>
+              )}
 
-          {completed && (
-            <Alert>
-              <CheckCircle2 />
-              <AlertTitle>Verification Complete</AlertTitle>
-              <AlertDescription>
-                You can safely close this page.
-              </AlertDescription>
-            </Alert>
-          )}
+              {stage === "awaiting_code" && (
+                <form className="space-y-3" onSubmit={submitCode}>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Verification code
+                    <Input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]*"
+                      placeholder="Enter code"
+                      value={code}
+                      onChange={(event) =>
+                        setCode(event.target.value.replace(/\D/g, ""))
+                      }
+                      required
+                    />
+                  </label>
+                  <Button
+                    className="w-full"
+                    disabled={submitting || code.length < 4}
+                    type="submit"
+                  >
+                    {submitting ? "Submitting…" : "Submit code"}
+                  </Button>
+                </form>
+              )}
+
+              {stage === "submitting_code" && (
+                <Alert>
+                  <LoaderCircle className="animate-spin" />
+                  <AlertTitle>Checking Your Code</AlertTitle>
+                  <AlertDescription>
+                    Keep this page open while we finish the secure sign-in.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {completed && (
+                <Alert>
+                  <CheckCircle2 />
+                  <AlertTitle>Verification Complete</AlertTitle>
+                  <AlertDescription>
+                    You can safely close this page.
+                  </AlertDescription>
+                </Alert>
+              )}
             </>
           )}
         </CardContent>
