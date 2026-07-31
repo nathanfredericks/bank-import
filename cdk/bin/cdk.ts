@@ -438,6 +438,7 @@ function createBankSchedule(
     flexibleTimeWindow: {
       mode: "OFF",
     },
+    state: "DISABLED",
     scheduleExpression,
     scheduleExpressionTimezone: scheduleTimezone,
     target: {
