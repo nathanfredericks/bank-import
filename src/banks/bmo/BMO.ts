@@ -2,7 +2,7 @@ import { tz } from "@date-fns/tz";
 import { format, formatISO, parseISO, subDays } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
+import { presentMfaChallenge } from "../../auth/handoff";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -25,10 +25,12 @@ export class BMO extends Bank {
     try {
       await bmo.launchBrowser();
       await bmo.login(loginID, password);
+      await bmo.saveBrowserState();
       await bmo.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await bmo.handleError(error);
+        throw error;
       } else {
         throw error;
       }
@@ -224,10 +226,15 @@ export class BMO extends Bank {
     logger.debug("Navigating to BMO login page");
     await page.goto("https://www1.bmo.com/banking/digital/login");
 
+    const loginIdInput = page.getByRole("textbox", {
+      name: "Card number or Login ID",
+    });
+    if (this.hasRestoredBrowserState() && (await loginIdInput.isVisible())) {
+      await this.clearRestoredBrowserState();
+    }
+
     logger.debug("Filling in card number and password");
-    await page
-      .getByRole("textbox", { name: "Card number or Login ID" })
-      .pressSequentially(loginID);
+    await loginIdInput.pressSequentially(loginID);
     await page.getByRole("checkbox", { name: "Remember me" }).check();
     await page.getByRole("textbox", { name: "Password" }).fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
@@ -245,7 +252,14 @@ export class BMO extends Bank {
 
     if (isTwoFactorAuthenticationRequired) {
       logger.debug("Two-factor authentication required");
-      logger.debug("Filling in two-factor authentication code");
+      const handoff = await presentMfaChallenge(BankName.BMO, [
+        { id: "sms", label: "Text message (SMS)" },
+      ]);
+      const method = await handoff.waitForMethod();
+      if (method !== "sms") {
+        await handoff.fail("This verification method is not supported");
+        throw new Error("Unsupported BMO verification method");
+      }
       await page.getByRole("button", { name: "Next" }).click();
       await page.getByRole("radio", { name: "SMS" }).click();
       await page
@@ -254,10 +268,8 @@ export class BMO extends Bank {
         })
         .click();
       await page.getByRole("button", { name: "Send code" }).click();
-      const code = await getSMSTwoFactorAuthenticationCode({
-        afterDate: this.date,
-        sender: "266898",
-      });
+      handoff.requestCode();
+      const code = await handoff.waitForCode();
       await page.getByRole("textbox", { name: "Verification code" }).fill(code);
       await page.getByRole("button", { name: "Confirm" }).click();
 
@@ -287,6 +299,7 @@ export class BMO extends Bank {
       const accounts = AuthenticateResponse.parse(authenticateJson);
 
       await this.processAccounts(accounts);
+      await handoff.complete();
     } else {
       await this.processAccounts(accounts);
     }

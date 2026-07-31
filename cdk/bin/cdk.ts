@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
 import * as cdk from "aws-cdk-lib";
+import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
+import * as apigwv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
@@ -64,6 +70,38 @@ const tracesBucket = new s3.Bucket(stack, "BankImportTracesBucket", {
   ],
 });
 
+const sessionStateKey = new kms.Key(stack, "BankImportSessionStateKey", {
+  enableKeyRotation: true,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+
+const sessionStateBucket = new s3.Bucket(
+  stack,
+  "BankImportSessionStateBucket",
+  {
+    encryption: s3.BucketEncryption.KMS,
+    encryptionKey: sessionStateKey,
+    versioned: false,
+    blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    enforceSSL: true,
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    autoDeleteObjects: true,
+  },
+);
+
+const authSessions = new dynamodb.Table(stack, "BankImportAuthSessions", {
+  partitionKey: { name: "id", type: dynamodb.AttributeType.STRING },
+  timeToLiveAttribute: "ttl",
+  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+  encryption: dynamodb.TableEncryption.AWS_MANAGED,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+authSessions.addGlobalSecondaryIndex({
+  indexName: "tokenHash-index",
+  partitionKey: { name: "tokenHash", type: dynamodb.AttributeType.STRING },
+  projectionType: dynamodb.ProjectionType.ALL,
+});
+
 const cluster = new ecs.Cluster(stack, "BankImportCluster", {
   vpc,
 });
@@ -88,6 +126,160 @@ const taskSecurityGroup = new ec2.SecurityGroup(
     allowAllOutbound: true,
   },
 );
+
+const workerImage = ecs.ContainerImage.fromAsset(
+  path.resolve(__dirname, "../.."),
+  {
+    platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
+  },
+);
+
+const recoveryTaskDefinition = new ecs.FargateTaskDefinition(
+  stack,
+  "BankImportRecoveryTaskDefinition",
+  {
+    memoryLimitMiB: 2048,
+    cpu: 1024,
+    runtimePlatform: {
+      cpuArchitecture: ecs.CpuArchitecture.ARM64,
+      operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+    },
+  },
+);
+const recoveryContainer = recoveryTaskDefinition.addContainer("bank-import", {
+  image: workerImage,
+  // Fargate permits at most 120 seconds for graceful container shutdown.
+  // The reconnect workflow itself remains active for up to ten minutes.
+  stopTimeout: cdk.Duration.seconds(119),
+  environment: {
+    TZ: timezone,
+    YNAB_BUDGET_ID: ynabBudgetId,
+    AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
+    AWS_S3_SESSION_STATES_BUCKET_NAME: sessionStateBucket.bucketName,
+    AWS_SECRET_ARN: secretArn,
+    AWS_DYNAMODB_MESSAGES_TABLE_NAME: messagesTableName,
+    AUTH_SESSIONS_TABLE_NAME: authSessions.tableName,
+  },
+  logging: ecs.LogDrivers.awsLogs({ streamPrefix: "auth-recovery", logGroup }),
+});
+
+tracesBucket.grantPut(recoveryTaskDefinition.taskRole);
+sessionStateBucket.grantReadWrite(recoveryTaskDefinition.taskRole);
+authSessions.grantReadWriteData(recoveryTaskDefinition.taskRole);
+bankImportSecret.grantRead(recoveryTaskDefinition.taskRole);
+recoveryTaskDefinition.addToTaskRolePolicy(
+  new iam.PolicyStatement({
+    effect: iam.Effect.ALLOW,
+    actions: ["dynamodb:Scan", "dynamodb:DeleteItem"],
+    resources: [
+      `arn:aws:dynamodb:${stack.region}:${stack.account}:table/${messagesTableName}`,
+    ],
+  }),
+);
+
+const authHandler = new lambda.Function(stack, "BankImportAuthHandler", {
+  runtime: lambda.Runtime.NODEJS_22_X,
+  handler: "index.handler",
+  code: lambda.Code.fromAsset(path.resolve(__dirname, "../../lambda/auth")),
+  timeout: cdk.Duration.seconds(15),
+  memorySize: 256,
+  environment: {
+    AUTH_SESSIONS_TABLE_NAME: authSessions.tableName,
+    AUTH_ECS_CLUSTER_ARN: cluster.clusterArn,
+    AUTH_WORKER_TASK_DEFINITION_ARN: recoveryTaskDefinition.taskDefinitionArn,
+    AUTH_WORKER_SUBNET_IDS: vpc.publicSubnets
+      .map((subnet) => subnet.subnetId)
+      .join(","),
+    AUTH_WORKER_SECURITY_GROUP_IDS: taskSecurityGroup.securityGroupId,
+    AUTH_WEBSOCKET_STAGE: "$default",
+  },
+});
+authSessions.grantReadWriteData(authHandler);
+authHandler.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ["ecs:RunTask"],
+    resources: [recoveryTaskDefinition.taskDefinitionArn],
+  }),
+);
+authHandler.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ["iam:PassRole"],
+    resources: [
+      recoveryTaskDefinition.taskRole.roleArn,
+      recoveryTaskDefinition.executionRole!.roleArn,
+    ],
+  }),
+);
+
+const controlApi = new apigwv2.WebSocketApi(stack, "BankImportAuthControlApi", {
+  connectRouteOptions: {
+    integration: new apigwv2Integrations.WebSocketLambdaIntegration(
+      "ConnectIntegration",
+      authHandler,
+    ),
+  },
+  disconnectRouteOptions: {
+    integration: new apigwv2Integrations.WebSocketLambdaIntegration(
+      "DisconnectIntegration",
+      authHandler,
+    ),
+  },
+});
+const controlStage = new apigwv2.WebSocketStage(
+  stack,
+  "BankImportAuthControlStage",
+  {
+    webSocketApi: controlApi,
+    stageName: "$default",
+    autoDeploy: true,
+  },
+);
+authHandler.addEnvironment("AUTH_WEBSOCKET_API_ID", controlApi.apiId);
+authHandler.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ["execute-api:ManageConnections"],
+    resources: ["*"],
+  }),
+);
+
+const portalApi = new apigwv2.HttpApi(stack, "BankImportAuthPortalApi");
+const portalIntegration = new apigwv2Integrations.HttpLambdaIntegration(
+  "PortalIntegration",
+  authHandler,
+);
+portalApi.addRoutes({
+  path: "/",
+  methods: [apigwv2.HttpMethod.ANY],
+  integration: portalIntegration,
+});
+portalApi.addRoutes({
+  path: "/{proxy+}",
+  methods: [apigwv2.HttpMethod.ANY],
+  integration: portalIntegration,
+});
+const portalDomain = new apigwv2.DomainName(
+  stack,
+  "BankImportAuthPortalDomain",
+  {
+    domainName: "reconnect.fredericks.app",
+    certificate: acm.Certificate.fromCertificateArn(
+      stack,
+      "BankImportAuthPortalCertificate",
+      "arn:aws:acm:ca-central-1:187489282488:certificate/c2eaab2f-e440-424d-adbe-dc7f7127d03d",
+    ),
+  },
+);
+new apigwv2.ApiMapping(stack, "BankImportAuthPortalMapping", {
+  api: portalApi,
+  domainName: portalDomain,
+});
+const authPortalUrl = "https://reconnect.fredericks.app";
+recoveryContainer.addEnvironment("AUTH_PORTAL_URL", authPortalUrl);
+recoveryContainer.addEnvironment(
+  "AUTH_CONTROL_WEBSOCKET_URL",
+  controlStage.url,
+);
+new cdk.CfnOutput(stack, "AuthPortalUrl", { value: authPortalUrl });
 
 function createBankSchedule(
   id: string,
@@ -136,17 +328,19 @@ function createBankSchedule(
   // });
 
   const bankImportContainer = taskDefinition.addContainer("bank-import", {
-    image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, "../.."), {
-      platform: cdk.aws_ecr_assets.Platform.LINUX_ARM64,
-    }),
+    image: workerImage,
     stopTimeout: cdk.Duration.minutes(2),
     environment: {
       BANK: id,
       TZ: timezone,
       YNAB_BUDGET_ID: ynabBudgetId,
       AWS_S3_TRACES_BUCKET_NAME: tracesBucket.bucketName,
+      AWS_S3_SESSION_STATES_BUCKET_NAME: sessionStateBucket.bucketName,
       AWS_SECRET_ARN: secretArn,
       AWS_DYNAMODB_MESSAGES_TABLE_NAME: messagesTableName,
+      AUTH_SESSIONS_TABLE_NAME: authSessions.tableName,
+      AUTH_PORTAL_URL: authPortalUrl,
+      AUTH_CONTROL_WEBSOCKET_URL: controlStage.url,
       // HTTP_PROXY: "http://localhost:1055",
     },
     logging: ecs.LogDrivers.awsLogs({
@@ -162,7 +356,7 @@ function createBankSchedule(
     image: ecs.ContainerImage.fromRegistry(
       "public.ecr.aws/docker/library/alpine:latest",
     ),
-    command: ["sh", "-c", "sleep 300"],
+    command: ["sh", "-c", "sleep 660"],
     essential: true,
   });
 
@@ -178,6 +372,9 @@ function createBankSchedule(
       resources: [tracesBucket.arnForObjects("*")],
     }),
   );
+
+  sessionStateBucket.grantReadWrite(taskDefinition.taskRole);
+  authSessions.grantReadWriteData(taskDefinition.taskRole);
 
   taskDefinition.addToTaskRolePolicy(
     new iam.PolicyStatement({
@@ -251,7 +448,9 @@ function createBankSchedule(
         launchType: "FARGATE",
         networkConfiguration: {
           awsvpcConfiguration: {
-            subnets: vpc.publicSubnets.map((subnet: ec2.ISubnet) => subnet.subnetId),
+            subnets: vpc.publicSubnets.map(
+              (subnet: ec2.ISubnet) => subnet.subnetId,
+            ),
             securityGroups: [taskSecurityGroup.securityGroupId],
             assignPublicIp: "ENABLED",
           },
