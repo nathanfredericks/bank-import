@@ -18,7 +18,12 @@ import * as ssm from "aws-cdk-lib/aws-ssm";
 import path from "path";
 
 const app = new cdk.App();
-const stack = new cdk.Stack(app, "BankImportStack");
+const stack = new cdk.Stack(app, "BankImportStack", {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
+});
 
 const tracesBucketName = ssm.StringParameter.valueForStringParameter(
   stack,
@@ -51,6 +56,7 @@ const secretArn = ssm.StringParameter.valueForStringParameter(
 );
 
 const vpc = new ec2.Vpc(stack, "BankImportVpc", {
+  maxAzs: 2,
   natGateways: 0,
 });
 
@@ -286,6 +292,7 @@ function createBankSchedule(
   bankName: string,
   scheduleExpression: string,
   scheduleTimezone: string,
+  state: "ENABLED" | "DISABLED" = "ENABLED",
 ) {
   const taskDefinition = new ecs.FargateTaskDefinition(
     stack,
@@ -329,7 +336,8 @@ function createBankSchedule(
 
   const bankImportContainer = taskDefinition.addContainer("bank-import", {
     image: workerImage,
-    stopTimeout: cdk.Duration.minutes(2),
+    // Fargate requires the stop timeout to be less than 120 seconds.
+    stopTimeout: cdk.Duration.seconds(119),
     environment: {
       BANK: id,
       TZ: timezone,
@@ -438,7 +446,7 @@ function createBankSchedule(
     flexibleTimeWindow: {
       mode: "OFF",
     },
-    state: "DISABLED",
+    state,
     scheduleExpression,
     scheduleExpressionTimezone: scheduleTimezone,
     target: {
@@ -470,7 +478,13 @@ createBankSchedule(
   timezone,
 );
 
-// createBankSchedule("tangerine", "Tangerine", "cron(0 0/4 * * ? *)", timezone);
+createBankSchedule(
+  "tangerine",
+  "Tangerine",
+  "cron(0 0/4 * * ? *)",
+  timezone,
+  "DISABLED",
+);
 
 createBankSchedule(
   "nbdb",
