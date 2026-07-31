@@ -20,10 +20,23 @@ import { Input } from "@/components/ui/input"
 
 type MfaOption = { id: string; label: string }
 type Challenge = {
-  bank: string
+  bankDisplayName: string
   stage: string
   error?: string
   options?: MfaOption[]
+}
+
+const bankDisplayNames: Record<string, string> = {
+  bmo: "BMO",
+  "rogers-bank": "Rogers Bank",
+  rogersbank: "Rogers Bank",
+  nbdb: "NBDB",
+  tangerine: "Tangerine",
+}
+
+function displayBankName(bank?: string) {
+  if (!bank) return undefined
+  return bankDisplayNames[bank.toLowerCase()] ?? bank
 }
 
 function csrfToken() {
@@ -116,6 +129,7 @@ export function App() {
   const completed = stage === "completed"
   const failed = stage === "failed"
   const expired = stage === "timed_out" || stage === "cancelled"
+  const bankDisplayName = displayBankName(challenge?.bankDisplayName)
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-muted/40 p-5">
@@ -143,12 +157,12 @@ export function App() {
             {unauthorized
               ? "Open the secure reconnect link sent to you to continue."
               : completed
-                ? "Your session has been refreshed and transactions are importing."
+                ? `Your ${bankDisplayName ?? "bank"} session has been refreshed and transactions are importing.`
                 : failed
-                  ? `The secure sign-in${challenge?.bank ? ` to ${challenge.bank}` : ""} could not be completed.`
+                  ? `The secure sign-in${bankDisplayName ? ` to ${bankDisplayName}` : ""} could not be completed.`
                   : expired
                     ? "Open the notification link again to start a fresh reconnect session."
-                    : `Securely reconnect${challenge?.bank ? ` to ${challenge.bank}` : ""}.`}
+                    : `Securely reconnect${bankDisplayName ? ` to ${bankDisplayName}` : ""}.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -201,7 +215,7 @@ export function App() {
                   <LoaderCircle className="animate-spin" />
                   <AlertTitle>Preparing Verification</AlertTitle>
                   <AlertDescription>
-                    Your secure bank session is starting.
+                    Your secure {bankDisplayName ?? "bank"} session is starting.
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -209,7 +223,9 @@ export function App() {
               {stage === "awaiting_method" && (
                 <section className="space-y-3">
                   <p className="text-sm font-medium">
-                    Choose how to receive your verification code.
+                    Choose how to receive your{" "}
+                    {bankDisplayName ? `${bankDisplayName} ` : ""}verification
+                    code.
                   </p>
                   {challenge?.options?.map((option) => (
                     <Button
@@ -231,7 +247,9 @@ export function App() {
               {stage === "awaiting_code" && (
                 <form className="space-y-3" onSubmit={submitCode}>
                   <label className="grid gap-2 text-sm font-medium">
-                    Verification code
+                    {bankDisplayName
+                      ? `${bankDisplayName} Verification Code`
+                      : "Verification Code"}
                     <Input
                       inputMode="numeric"
                       autoComplete="one-time-code"
@@ -259,7 +277,8 @@ export function App() {
                   <LoaderCircle className="animate-spin" />
                   <AlertTitle>Checking Your Code</AlertTitle>
                   <AlertDescription>
-                    Keep this page open while we finish the secure sign-in.
+                    Keep this page open while we finish the secure{" "}
+                    {bankDisplayName ? `${bankDisplayName} ` : ""}sign-in.
                   </AlertDescription>
                 </Alert>
               )}

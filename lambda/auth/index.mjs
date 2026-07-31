@@ -24,6 +24,7 @@ const bankNames = {
   nbdb: "NBDB",
   tangerine: "Tangerine",
 };
+const bankDisplayName = (bank) => bankNames[bank] || "Your Bank";
 const staticExtensions = new Set([".html", ".css", ".js", ".svg"]);
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -269,7 +270,10 @@ async function http(event) {
     return json(403, { error: "invalid request" });
   if (requestPath === "/api/challenge")
     return json(200, {
-      bank: bankNames[session.bank] || "Your Bank",
+      // Keep `bank` display-only for compatibility with already-open clients.
+      // New clients use the explicit field so internal bank IDs never reach UI.
+      bank: bankDisplayName(session.bank),
+      bankDisplayName: bankDisplayName(session.bank),
       stage: session.stage,
       options: session.options,
       error: session.error,
