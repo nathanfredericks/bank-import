@@ -21,5 +21,4 @@ FROM base AS release
 COPY --from=install /temp/prod/node_modules node_modules
 COPY . .
 
-ENTRYPOINT ["sh", "-c"]
-CMD ["xvfb-run bun run src/index.ts"]
+ENTRYPOINT ["sh", "-c", "xvfb-run bun run src/index.ts"]

@@ -1,5 +1,5 @@
 import { formatISO, subDays } from "date-fns";
-import { presentMfaChallenge } from "../../auth/handoff";
+import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -15,12 +15,10 @@ export class RogersBank extends Bank {
     try {
       await rogersBank.launchBrowser();
       await rogersBank.login(username, password);
-      await rogersBank.saveBrowserState();
       await rogersBank.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await rogersBank.handleError(error);
-        throw error;
       } else {
         throw error;
       }
@@ -137,7 +135,6 @@ export class RogersBank extends Bank {
     ]);
 
     if (isLoginRequired) {
-      await this.clearRestoredBrowserState();
       await page
         .getByRole("textbox", { name: "Username" })
         .pressSequentially(username);
@@ -159,23 +156,18 @@ export class RogersBank extends Bank {
 
       if (isTwoFactorAuthenticationRequired) {
         logger.debug("Two-factor authentication required");
-        const handoff = await presentMfaChallenge(BankName.RogersBank, [
-          { id: "sms", label: "Text message (SMS)" },
-        ]);
-        const method = await handoff.waitForMethod();
-        if (method !== "sms") {
-          await handoff.fail("This verification method is not supported");
-          throw new Error("Unsupported Rogers Bank verification method");
-        }
+        logger.debug("Filling in two-factor authentication code");
         await page.getByRole("radio", { name: "+" }).click();
         await page.getByRole("button", { name: "Send code" }).click();
-        handoff.requestCode();
-        const code = await handoff.waitForCode();
+        const code = await getSMSTwoFactorAuthenticationCode({
+          afterDate: this.date,
+          sender: "74979",
+          regex: /\b\d{8}\b/,
+        });
         await page
           .getByRole("textbox", { name: "Verification Code" })
           .fill(code);
         await page.getByRole("button", { name: "Continue" }).click();
-        await handoff.complete();
       }
     }
 

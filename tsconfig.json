@@ -11,6 +11,5 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["bun"]
-  },
-  "exclude": ["cdk", "frontend"]
+  }
 }

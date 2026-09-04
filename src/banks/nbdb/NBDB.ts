@@ -1,4 +1,4 @@
-import { presentMfaChallenge } from "../../auth/handoff";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -14,12 +14,10 @@ export class NBDB extends Bank {
     try {
       await nbdb.launchBrowser();
       await nbdb.login(userID, password);
-      await nbdb.saveBrowserState();
       await nbdb.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await nbdb.handleError(error);
-        throw error;
       } else {
         throw error;
       }
@@ -61,7 +59,6 @@ export class NBDB extends Bank {
       name: "Enter your user ID",
     });
     if (await userIDTextbox.isVisible()) {
-      await this.clearRestoredBrowserState();
       await this.fillUserIDAndPassword(userID, password);
     } else {
       await this.fillPassword(password);
@@ -81,20 +78,15 @@ export class NBDB extends Bank {
 
     if (isTwoFactorAuthenticationRequired) {
       logger.debug("Two-factor authentication required");
-      const handoff = await presentMfaChallenge(BankName.NBDB, [
-        { id: "email", label: "Email" },
-      ]);
-      const method = await handoff.waitForMethod();
-      if (method !== "email") {
-        await handoff.fail("This verification method is not supported");
-        throw new Error("Unsupported NBDB verification method");
-      }
+      logger.debug("Filling in two-factor authentication code");
       await page.getByRole("link", { name: "Email" }).click();
-      handoff.requestCode();
-      const code = await handoff.waitForCode();
+      const code = await getEmailTwoFactorAuthenticationCode({
+        afterDate: this.date,
+        sender: "noreply@appbnc.ca",
+        subject: "Here's your verification code",
+      });
       await page.getByRole("textbox", { name: "Verification code" }).fill(code);
       await page.getByRole("button", { name: "Confirm" }).click();
-      await handoff.complete();
     }
 
     const summaryResponse = await page.waitForResponse(

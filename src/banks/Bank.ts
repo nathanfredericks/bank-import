@@ -1,18 +1,9 @@
-import { launch } from "cloakbrowser";
+import { launchContext } from "cloakbrowser";
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { BrowserContext, Page } from "playwright-core";
 import { z } from "zod";
-import {
-  failActiveMfaHandoff,
-  isExpectedMfaHandoffEnd,
-} from "../auth/handoff";
-import {
-  clearBrowserState,
-  restoreBrowserState,
-  saveBrowserState,
-} from "../utils/browserState";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { sendNotification } from "../utils/pushover";
@@ -25,7 +16,6 @@ export class Bank {
   private page: Page | null = null;
   protected date = new Date();
   private accounts: z.infer<typeof Account>[] = [];
-  private restoredBrowserState = false;
 
   constructor(bank: BankName) {
     this.bank = bank;
@@ -33,9 +23,7 @@ export class Bank {
 
   protected async launchBrowser() {
     logger.debug("Launching browser");
-    const storageState = await restoreBrowserState(this.bank);
-    this.restoredBrowserState = Boolean(storageState);
-    const browser = await launch({
+    this.context = await launchContext({
       headless: false,
       humanize: true,
       humanPreset: "careful",
@@ -43,7 +31,6 @@ export class Bank {
       timezone: "America/Halifax",
       proxy: env.HTTP_PROXY,
     });
-    this.context = await browser.newContext({ storageState });
     await this.startTracing();
     logger.debug("Creating new page");
     this.page = await this.context.newPage();
@@ -54,21 +41,6 @@ export class Bank {
     logger.debug("Closing browser");
     await this.page?.context().browser()?.close();
     this.page = null;
-  }
-
-  protected async saveBrowserState() {
-    if (!this.context) return;
-    await saveBrowserState(this.bank, await this.context.storageState());
-  }
-
-  protected hasRestoredBrowserState() {
-    return this.restoredBrowserState;
-  }
-
-  protected async clearRestoredBrowserState() {
-    if (!this.restoredBrowserState) return;
-    await clearBrowserState(this.bank);
-    this.restoredBrowserState = false;
   }
 
   protected async startTracing() {
@@ -82,9 +54,6 @@ export class Bank {
   }
 
   protected async handleError(error: Error) {
-    const expectedMfaEnd = isExpectedMfaHandoffEnd(error);
-    if (!expectedMfaEnd)
-      await failActiveMfaHandoff("The bank login could not be completed");
     logger.error(error);
     const errorMessage = error.stack?.split("\n")[0];
     const getTraceFilePath = (fileName: string) => `traces/${fileName}`;
@@ -101,14 +70,12 @@ export class Bank {
       "application/zip",
       traceFile,
     );
-    if (!expectedMfaEnd) {
-      await sendNotification(errorMessage || null, {
-        title: `Error Logging Into ${bankNames[this.bank]}`,
-        url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
-        url_title: "Open AWS Console",
-        priority: -1,
-      });
-    }
+    await sendNotification(errorMessage || null, {
+      title: `Error Logging Into ${bankNames[this.bank]}`,
+      url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
+      url_title: "Open AWS Console",
+      priority: -1,
+    });
   }
 
   protected async getCookies() {

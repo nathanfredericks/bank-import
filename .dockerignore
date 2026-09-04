@@ -1,6 +1,2 @@
 cdk/cdk.out
 .env
-node_modules
-**/node_modules
-cdk.out
-frontend/bank-reconnect/dist
