@@ -1,163 +1,137 @@
 import * as ynab from "ynab";
-import { TransactionClearedStatus } from "ynab";
 import { z } from "zod";
-import { Account, BankName, bankNames } from "./banks/types";
-import env from "./utils/env";
-import logger from "./utils/logger";
-import secrets from "./utils/secrets";
+import { Account } from "./banks/types";
 
-const ynabAPI = new ynab.API(secrets.YNAB_ACCESS_TOKEN);
+type BankAccount = z.infer<typeof Account>;
+type Settings = {
+  budgetId: string;
+  adjustmentPayeeId?: string;
+  dryRun: boolean;
+  log: (message: string) => void;
+};
 
-export async function importTransactions(accounts: z.infer<typeof Account>[]) {
-  logger.info("Importing transactions to YNAB");
-
-  logger.debug("Fetching YNAB accounts");
-  const ynabAccounts = await ynabAPI.accounts
-    .getAccounts(env.YNAB_BUDGET_ID)
-    .then((response) =>
-      response.data.accounts.filter((account) => !account.deleted),
+export function createYnabImporter(api: ynab.API, settings: Settings) {
+  async function matchedAccounts(accounts: BankAccount[]) {
+    if (!accounts.length) throw new Error("Bank returned no accounts");
+    const response = await api.accounts.getAccounts(settings.budgetId);
+    const ynabAccounts = response.data.accounts.filter(
+      (a) => !a.deleted && !a.closed,
     );
-
-  if (
-    !accounts.some(
-      (account) => account.transactions && account.transactions.length,
-    )
-  ) {
-    logger.info("Imported 0 transaction(s) to YNAB");
-    return;
-  }
-
-  const importedTransactionMap: Record<string, number> = {};
-
-  const findYnabAccount = (account: z.infer<typeof Account>) => {
-    return ynabAccounts.find((ynabAccount) =>
-      ynabAccount.note?.includes(account.id),
-    );
-  };
-
-  const transactionsToImport = accounts
-    .filter((account) => account.transactions && account.transactions.length)
-    .flatMap((account) => {
-      const matchedYnabAccount = findYnabAccount(account);
-
-      if (!matchedYnabAccount) {
-        logger.info(
-          `Error matching YNAB account for bank account ${account.id} (${account.name})`,
-        );
-        return [];
-      }
-
-      return account.transactions
-        .filter((transaction) => {
-          const transactionDate = new Date(transaction.date);
-          const now = new Date();
-          const fiveYearsAgo = new Date();
-          fiveYearsAgo.setFullYear(now.getFullYear() - 5);
-          return transactionDate <= now && transactionDate >= fiveYearsAgo;
-        })
-        .map((transaction) => {
-          const amount = Math.round(transaction.amount * 1000);
-
-          const key = `${matchedYnabAccount.id}:${amount}:${transaction.date}`;
-          if (importedTransactionMap[key]) {
-            importedTransactionMap[key]++;
-          } else {
-            importedTransactionMap[key] = 1;
-          }
-
-          return {
-            account_id: matchedYnabAccount.id,
-            date: transaction.date,
-            amount,
-            payee_name: transaction.description,
-            cleared: TransactionClearedStatus.Cleared,
-            import_id: `YNAB:${amount}:${transaction.date}:${importedTransactionMap[key]}`,
-          };
-        });
+    // Validate every mapping before any writes, including accounts with no transactions.
+    const candidates = accounts.map((account) => {
+      const matches = ynabAccounts.filter((a) => a.note?.includes(account.id));
+      settings.log(
+        `Account ${account.id} (${account.name}): ${account.transactions.length} transactions; ${matches.length} YNAB mappings`,
+      );
+      return { account, matches };
     });
-
-  if (!transactionsToImport.length) {
-    logger.info("Imported 0 transaction(s) to YNAB");
-    return;
+    if (candidates.some(({ matches }) => matches.length !== 1))
+      throw new Error(
+        "Expected exactly one YNAB mapping for each bank account",
+      );
+    const matched = candidates.map(({ account, matches }) => ({
+      account,
+      target: matches[0],
+    }));
+    if (new Set(matched.map((m) => m.target.id)).size !== matched.length)
+      throw new Error("Multiple bank accounts map to one YNAB account");
+    return matched;
   }
 
-  try {
-    const response = await ynabAPI.transactions.createTransactions(
-      env.YNAB_BUDGET_ID,
-      { transactions: transactionsToImport },
-    );
-    const { transactions: imported } = response.data;
-    logger.info(
-      `Imported ${imported?.length} transaction(s) to YNAB`,
-      imported,
-    );
-  } catch (error) {
-    logger.error("Error importing transactions to YNAB", error);
-  }
-}
+  return {
+    async importTransactions(accounts: BankAccount[]) {
+      const matched = await matchedAccounts(accounts);
+      const occurrences: Record<string, number> = {};
+      const now = new Date();
+      const oldest = new Date();
+      oldest.setFullYear(now.getFullYear() - 5);
+      const transactions: ynab.SaveTransactionWithIdOrImportId[] =
+        matched.flatMap(({ account, target }) =>
+          account.transactions
+            .filter((transaction) => {
+              const date = new Date(transaction.date);
+              return date <= now && date >= oldest;
+            })
+            .map((transaction) => {
+              const amount = Math.round(transaction.amount * 1000);
+              if (!Number.isSafeInteger(amount))
+                throw new Error("Invalid transaction amount");
+              const key = `${target.id}:${amount}:${transaction.date}`;
+              occurrences[key] = (occurrences[key] ?? 0) + 1;
+              return {
+                account_id: target.id,
+                date: transaction.date,
+                amount,
+                payee_name: transaction.description,
+                cleared: ynab.TransactionClearedStatus.Cleared,
+                import_id: `YNAB:${amount}:${transaction.date}:${occurrences[key]}`,
+              };
+            }),
+        );
+      settings.log(
+        `${settings.dryRun ? "DRY RUN: would submit" : "Submitting"} ${transactions.length} Rogers transactions`,
+      );
+      if (!settings.dryRun && transactions.length) {
+        const result = await api.transactions.createTransactions(
+          settings.budgetId,
+          { transactions },
+        );
+        settings.log(
+          // YNAB also returns records updated by automatic matching, not just new entries.
+          `YNAB processed ${transactions.length} submitted transactions; ${result.data.duplicate_import_ids?.length ?? 0} duplicate import IDs skipped`,
+        );
+      }
+      return transactions;
+    },
 
-export async function updateAccountBalances(
-  accounts: z.infer<typeof Account>[],
-  bankName: BankName,
-) {
-  logger.debug("Updating account balances in YNAB");
-
-  logger.debug("Fetching YNAB accounts");
-  const ynabAccounts = await ynabAPI.accounts
-    .getAccounts(env.YNAB_BUDGET_ID)
-    .then((response) =>
-      response.data.accounts.filter((account) => !account.deleted),
-    );
-
-  logger.debug(`Fetched ${ynabAccounts.length} YNAB accounts`);
-
-  let adjustmentsCreated = 0;
-
-  const findYnabAccount = (account: z.infer<typeof Account>) => {
-    return ynabAccounts.find((ynabAccount) =>
-      ynabAccount.note?.includes(account.id),
-    );
+    async updateAccountBalances(accounts: BankAccount[]) {
+      if (!settings.adjustmentPayeeId)
+        throw new Error("NBDB adjustment payee is required");
+      const { data } = await api.payees.getPayees(settings.budgetId);
+      if (
+        !data.payees.some(
+          (p) =>
+            !p.deleted &&
+            !p.transfer_account_id &&
+            p.id === settings.adjustmentPayeeId,
+        )
+      )
+        throw new Error(
+          "NBDB adjustment payee is not valid for the selected budget",
+        );
+      const matched = await matchedAccounts(accounts);
+      const adjustments: ynab.SaveTransactionWithIdOrImportId[] =
+        matched.flatMap(({ account, target }) => {
+          const desired = Math.round(account.balance * 1000);
+          const amount = desired - target.balance;
+          if (!Number.isSafeInteger(desired) || !Number.isSafeInteger(amount))
+            throw new Error("Invalid account balance");
+          settings.log(
+            `${settings.dryRun ? "DRY RUN: " : ""}NBDB account ${account.id}: adjustment ${amount} milliunits`,
+          );
+          return amount === 0
+            ? []
+            : [
+                {
+                  account_id: target.id,
+                  payee_id: settings.adjustmentPayeeId,
+                  date: new Date().toLocaleDateString("en-CA", {
+                    timeZone: "America/Halifax",
+                  }),
+                  amount,
+                  memo: "Entered automatically from NBDB",
+                  cleared: ynab.TransactionClearedStatus.Reconciled,
+                  approved: true,
+                },
+              ];
+        });
+      if (!settings.dryRun) {
+        for (const transaction of adjustments)
+          await api.transactions.createTransaction(settings.budgetId, {
+            transaction,
+          });
+      }
+      return adjustments;
+    },
   };
-
-  for (const account of accounts) {
-    const matchedYnabAccount = findYnabAccount(account);
-
-    if (!matchedYnabAccount) {
-      logger.debug(`No YNAB account matched for bank account ${account.id}`);
-      continue;
-    }
-
-    const desiredBalance = Math.round(account.balance * 1000);
-    const currentBalance = matchedYnabAccount.balance;
-    const adjustment = desiredBalance - currentBalance;
-
-    if (adjustment !== 0) {
-      const transaction = {
-        account_id: matchedYnabAccount.id,
-        payee_id: "df22f16d-449b-4214-98da-2844de326faf",
-        date: new Date().toLocaleDateString("en-CA", {
-          timeZone: "America/Halifax",
-        }),
-        amount: adjustment,
-        memo: `Entered automatically from ${bankNames[bankName]}`,
-        cleared: TransactionClearedStatus.Reconciled,
-        approved: true,
-      };
-
-      await ynabAPI.transactions.createTransaction(env.YNAB_BUDGET_ID, {
-        transaction,
-      });
-
-      adjustmentsCreated++;
-      logger.debug(
-        `Created balance adjustment for YNAB account ${matchedYnabAccount.id} (${matchedYnabAccount.name}): ${adjustment} milliunits`,
-      );
-    } else {
-      logger.debug(
-        `No adjustment needed for YNAB account ${matchedYnabAccount.id} (${matchedYnabAccount.name})`,
-      );
-    }
-  }
-
-  logger.debug(`Created ${adjustmentsCreated} balance adjustment(s)`);
 }

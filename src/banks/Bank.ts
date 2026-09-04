@@ -1,20 +1,19 @@
 import { launchContext } from "cloakbrowser";
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { BrowserContext, Page } from "playwright-core";
 import { z } from "zod";
 import env from "../utils/env";
 import logger from "../utils/logger";
-import { sendNotification } from "../utils/pushover";
 import { uploadFile } from "../utils/s3";
-import { Account, BankName, bankNames } from "./types";
+import { Account, BankName } from "./types";
 
 export class Bank {
   private readonly bank: BankName;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   protected date = new Date();
+  protected diagnosticStage = "browser-start";
   private accounts: z.infer<typeof Account>[] = [];
 
   constructor(bank: BankName) {
@@ -29,53 +28,50 @@ export class Bank {
       humanPreset: "careful",
       geoip: true,
       timezone: "America/Halifax",
-      proxy: env.HTTP_PROXY,
     });
-    await this.startTracing();
     logger.debug("Creating new page");
     this.page = await this.context.newPage();
+    this.page.setDefaultTimeout(30_000);
+    this.page.setDefaultNavigationTimeout(30_000);
+    this.diagnosticStage = "login";
   }
 
-  protected async closeBrowser(tracingFilePath?: string) {
-    await this.stopTracing(tracingFilePath);
+  protected async closeBrowser() {
     logger.debug("Closing browser");
-    await this.page?.context().browser()?.close();
+    await this.context?.close();
+    this.context = null;
     this.page = null;
   }
 
-  protected async startTracing() {
-    logger.debug("Starting tracing");
-    await this.context?.tracing.start({ screenshots: true, snapshots: true });
-  }
-
-  protected async stopTracing(filePath?: string) {
-    logger.debug("Stopping tracing");
-    await this.context?.tracing.stop({ path: filePath });
-  }
-
-  protected async handleError(error: Error) {
-    logger.error(error);
-    const errorMessage = error.stack?.split("\n")[0];
-    const getTraceFilePath = (fileName: string) => `traces/${fileName}`;
-    const getTraceFileName = () =>
-      `${format(this.date, "yyyy-MM-dd")}-${this.bank}-${randomUUID()}.zip`;
-    const traceFileName = getTraceFileName();
-    const traceFilePath = getTraceFilePath(traceFileName);
-    await this.closeBrowser(traceFilePath);
-    logger.info(`Saved trace to ${traceFilePath}`);
-    const traceFile = await readFile(traceFilePath);
-    await uploadFile(
-      env.AWS_S3_TRACES_BUCKET_NAME,
-      traceFileName,
-      "application/zip",
-      traceFile,
-    );
-    await sendNotification(errorMessage || null, {
-      title: `Error Logging Into ${bankNames[this.bank]}`,
-      url: "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
-      url_title: "Open AWS Console",
-      priority: -1,
+  protected async handleError(_error: Error) {
+    logger.error(`Bank operation failed during ${this.diagnosticStage}`);
+    const traceFileName = `${format(this.date, "yyyy-MM-dd")}-${this.bank}-${randomUUID()}.json`;
+    // Playwright network traces record login POST bodies, cookies, and OTPs.
+    // Store an allowlisted diagnostic record instead of raw browser traces.
+    const diagnostic = JSON.stringify({
+      bank: this.bank,
+      stage: this.diagnosticStage,
+      startedAt: this.date.toISOString(),
+      failedAt: new Date().toISOString(),
+      category: "bank-operation-failed",
     });
+    if (Bun.env.LOCAL_SECRETS_STDIN === "true") {
+      await this.closeBrowser().catch(() => {});
+      return;
+    }
+    try {
+      await uploadFile(
+        env.AWS_S3_TRACES_BUCKET_NAME,
+        traceFileName,
+        "application/json",
+        diagnostic,
+      );
+      logger.info(`Private trace saved: ${traceFileName}`);
+    } catch {
+      logger.error("Diagnostic trace could not be saved");
+    } finally {
+      await this.closeBrowser().catch(() => {});
+    }
   }
 
   protected async getCookies() {

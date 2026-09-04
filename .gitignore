@@ -1,4 +1,9 @@
 .env
+.env.*
+!.env.example
+cdk/deploy.local.json
+cdk/outputs.json
+cdk/cdk.context.json
 cdk/cdk.out
 dist
 node_modules

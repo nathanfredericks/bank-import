@@ -1,25 +1,15 @@
 services:
-  bank-import-bmo:
-    <<: &bank-import
-      build:
-        context: .
-        dockerfile: Dockerfile
-      env_file: .env
-      restart: no
-    environment:
-      BANK: bmo
-
   bank-import-rogers-bank:
-    <<: *bank-import
+    <<: &bank-import
+      build: .
+      platform: linux/arm64
+      env_file: .env
+      restart: "no"
     environment:
       BANK: rogers-bank
-
-  bank-import-tangerine:
-    <<: *bank-import
-    environment:
-      BANK: tangerine
-
+      DRY_RUN: "true"
   bank-import-nbdb:
     <<: *bank-import
     environment:
       BANK: nbdb
+      DRY_RUN: "true"

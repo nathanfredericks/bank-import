@@ -23,7 +23,7 @@ async function sendNotification(
   message: string | null,
   options: PushoverOptions = {},
 ) {
-  logger.debug(`Sending notification to Pushover: ${message}`);
+  logger.debug("Sending failure notification");
 
   const formData = new FormData();
   formData.append("token", secrets.PUSHOVER_TOKEN);
@@ -41,13 +41,14 @@ async function sendNotification(
   const response = await fetch("https://api.pushover.net/1/messages.json", {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(10_000),
   });
 
   const json = await response.json();
   const { status } = PushoverResponse.parse(json);
 
   if (status !== 1) {
-    logger.error(`Failed to send notification to Pushover: ${status}`);
+    throw new Error("Pushover notification failed");
   }
   logger.debug(`Sent notification to Pushover`);
 }

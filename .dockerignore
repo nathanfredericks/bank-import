@@ -1,2 +1,13 @@
-cdk/cdk.out
+.git
 .env
+.env.*
+!.env.example
+**/node_modules
+**/cdk.out
+cdk
+tests
+traces
+user-data
+frontend
+lambda
+*.log

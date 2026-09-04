@@ -1,5 +1,7 @@
 import { formatISO, subDays } from "date-fns";
-import { getSMSTwoFactorAuthenticationCode } from "../../utils/2fa";
+import type { Response } from "playwright-core";
+import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
+import env from "../../utils/env";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
 import { BankName } from "../types";
@@ -22,6 +24,7 @@ export class RogersBank extends Bank {
       } else {
         throw error;
       }
+      throw new Error("Rogers Bank login or account discovery failed");
     }
     return rogersBank;
   }
@@ -31,16 +34,16 @@ export class RogersBank extends Bank {
     customerId: string,
     accountName: string,
     accountUuid: string,
+    response: Response,
   ) {
-    const page = await this.getPage();
-    const response = await page.waitForResponse(
-      (response: any) =>
-        response
-          .url()
-          .startsWith(
-            `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
-          ) && response.request().method() === "GET",
-    );
+    if (
+      !response
+        .url()
+        .startsWith(
+          `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
+        )
+    )
+      throw new Error("Unexpected Rogers transaction account");
 
     const url = new URL(
       `https://selfserve.apis.rogersbank.com/corebank/v1/account/${accountId}/customer/${customerId}/transactions`,
@@ -60,6 +63,7 @@ export class RogersBank extends Bank {
 
     const transactionsResponse = await fetch(url.toString(), {
       headers: await response.request().allHeaders(),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!transactionsResponse.ok) {
@@ -80,6 +84,23 @@ export class RogersBank extends Bank {
 
   private async login(username: string, password: string): Promise<void> {
     const page = await this.getPage();
+    // Arm listeners before any action that can emit the response.
+    const detailResponse = page.waitForResponse(
+      (response) =>
+        /^https:\/\/selfserve\.apis\.rogersbank\.com\/corebank\/v1\/account\/\d+\/customer\/\d+\/detail$/.test(
+          response.url(),
+        ) && response.request().method() === "GET",
+      { timeout: 180_000 },
+    );
+    const activityResponse = page.waitForResponse(
+      (response) =>
+        /^https:\/\/selfserve\.apis\.rogersbank\.com\/corebank\/v1\/account\/\d+\/customer\/\d+\/transactions/.test(
+          response.url(),
+        ) && response.request().method() === "GET",
+      { timeout: 180_000 },
+    );
+    void detailResponse.catch(() => {});
+    void activityResponse.catch(() => {});
 
     await page.route(
       "https://selfserve.apis.rogersbank.com/**",
@@ -142,27 +163,38 @@ export class RogersBank extends Bank {
         .getByRole("textbox", { name: "Password" })
         .pressSequentially(password);
       await page.getByRole("checkbox", { name: "Remember me" }).check();
-      await page.getByRole("button", { name: "Sign in" }).click();
-
-      const response = await page.waitForResponse(
-        (response) =>
-          response
-            .url()
-            .startsWith(
-              "https://selfserve.apis.rogersbank.com/v1/authenticate/user/",
-            ) && response.request().method() === "POST",
-      );
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response
+              .url()
+              .startsWith(
+                "https://selfserve.apis.rogersbank.com/v1/authenticate/user/",
+              ) && response.request().method() === "POST",
+        ),
+        page.getByRole("button", { name: "Sign in" }).click(),
+      ]);
       const isTwoFactorAuthenticationRequired = response.status() === 412;
+      if (!response.ok() && !isTwoFactorAuthenticationRequired)
+        throw new Error("Rogers credentials were rejected");
 
       if (isTwoFactorAuthenticationRequired) {
+        this.diagnosticStage = "email-verification";
         logger.debug("Two-factor authentication required");
         logger.debug("Filling in two-factor authentication code");
-        await page.getByRole("radio", { name: "+" }).click();
+        // Masked email labels still contain @; never fall back to SMS.
+        const byEmailLabel = page.getByRole("radio", { name: /email|@/i });
+        await byEmailLabel.first().waitFor({ state: "visible" });
+        if ((await byEmailLabel.count()) !== 1)
+          throw new Error("Expected one email verification option");
+        await byEmailLabel.check();
+        const requestedAt = new Date();
         await page.getByRole("button", { name: "Send code" }).click();
-        const code = await getSMSTwoFactorAuthenticationCode({
-          afterDate: this.date,
-          sender: "74979",
-          regex: /\b\d{8}\b/,
+        const code = await getEmailTwoFactorAuthenticationCode({
+          afterDate: requestedAt,
+          sender: env.ROGERS_EMAIL_SENDER!,
+          subject: env.ROGERS_EMAIL_SUBJECT!,
+          codeLength: env.ROGERS_EMAIL_CODE_LENGTH!,
         });
         await page
           .getByRole("textbox", { name: "Verification Code" })
@@ -172,16 +204,12 @@ export class RogersBank extends Bank {
     }
 
     if (!isLoginRequired) {
-      page.reload();
+      await page.reload();
     }
 
+    this.diagnosticStage = "account-discovery";
     logger.debug("Waiting for response");
-    const response = await page.waitForResponse(
-      (response) =>
-        /^https:\/\/selfserve\.apis\.rogersbank\.com\/corebank\/v1\/account\/\d+\/customer\/\d+\/detail$/.test(
-          response.url(),
-        ) && response.request().method() === "GET",
-    );
+    const response = await detailResponse;
 
     const json = await response.json();
     const account = AccountResponse.parse(json);
@@ -191,6 +219,7 @@ export class RogersBank extends Bank {
       account._customerId,
       account.name,
       account.id,
+      await activityResponse,
     );
 
     this.setAccounts([

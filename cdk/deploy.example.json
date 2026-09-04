@@ -1,0 +1,13 @@
+{
+  "tracesBucketName": "bank-import-traces-187489282488-ca-central-1",
+  "timezone": "America/Halifax",
+  "secretArn": "arn:aws:secretsmanager:ca-central-1:187489282488:secret:bank-import-ncEGAn",
+  "ynabBudgetId": "",
+  "ynabAdjustmentPayeeId": "",
+  "nbdbExcludedAccountIds": [],
+  "rogersEmailSender": "",
+  "rogersEmailSubject": "",
+  "rogersEmailCodeLength": null,
+  "enabledBanks": [],
+  "verifiedBanks": []
+}
