@@ -11,11 +11,12 @@ RUN bun install --frozen-lockfile --production
 RUN bun -e 'import { ensureBinary } from "cloakbrowser"; await ensureBinary()'
 
 FROM base AS release
-COPY --from=dependencies /usr/src/app/node_modules ./node_modules
-COPY --from=dependencies /opt/cloakbrowser /opt/cloakbrowser
-COPY package.json bun.lock tsconfig.json ./
-COPY src ./src
-RUN mkdir -p traces && chown -R pwuser:pwuser /usr/src/app /opt/cloakbrowser
+COPY --chown=pwuser:pwuser --from=dependencies /usr/src/app/node_modules ./node_modules
+COPY --chown=pwuser:pwuser --from=dependencies /opt/cloakbrowser /opt/cloakbrowser
+COPY --chown=pwuser:pwuser package.json bun.lock tsconfig.json ./
+COPY --chown=pwuser:pwuser src ./src
+RUN bun build src/index.ts --target=node --packages=external --outfile=node-index.mjs && node --check node-index.mjs
+RUN mkdir -p traces && chown pwuser:pwuser traces
 USER pwuser
 ENTRYPOINT ["timeout", "--signal=TERM", "--kill-after=119s", "300s", "xvfb-run", "-a", "bun"]
 CMD ["run", "src/index.ts"]

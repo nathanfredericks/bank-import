@@ -34,6 +34,13 @@ const Env = z
     AWS_DEFAULT_REGION: z.string().optional(),
     AWS_S3_TRACES_BUCKET_NAME: z.string().min(1),
     AWS_SECRET_ARN: z.string().min(1),
+    EQ_STATE_BUCKET: z.string().min(1).optional(),
+    EQ_JOB_ID: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{1,80}$/)
+      .optional(),
+    EQ_FORCE_LOGIN: boolean,
+    EQ_START_DATE: z.string().date().default("2026-10-02"),
   })
   .superRefine((value, ctx) => {
     const required =
@@ -43,7 +50,9 @@ const Env = z
             "ROGERS_EMAIL_SUBJECT",
             "ROGERS_EMAIL_CODE_LENGTH",
           ] as const)
-        : (["YNAB_ADJUSTMENT_PAYEE_ID"] as const);
+        : value.BANK === BankName.NBDB
+          ? (["YNAB_ADJUSTMENT_PAYEE_ID"] as const)
+          : (["EQ_STATE_BUCKET", "EQ_JOB_ID"] as const);
     for (const key of required) {
       if (value[key] === undefined)
         ctx.addIssue({

@@ -4,10 +4,12 @@
 
 - AWS account: `187489282488`; region: `ca-central-1`.
 - One CDK stack, `BankImportStack`, using the existing `CDKToolkit` bootstrap.
-- Two ARM64 Fargate task definitions: 1 vCPU, 2 GB RAM; public subnets with
+- Three ARM64 Fargate task definitions: 1 vCPU, 2 GB RAM; public subnets with
   outbound internet and no inbound security-group rules. No NAT gateway.
 - Rogers: every four hours, starting midnight, `America/Halifax`.
-- NBDB: every four hours, ten minutes after Rogers, `America/Halifax`.
+- NBDB: 17:00 Monday through Friday, `America/Halifax`.
+- EQ Bank: every four hours, starting midnight, `America/Halifax`, through
+  a serialized Step Functions workflow shared with purchase-alert lookups.
 - All schedules initially disabled. Enabled schedules override the task's
   dry-run default to perform real imports.
 - Worker watchdog: five minutes; shutdown grace: 119 seconds. Scheduler
@@ -31,7 +33,7 @@ non-session identities.
 
 For this deployment, the owner has explicitly chosen existing local root
 credentials for AWS control-plane operations. Append `--allow-root` to
-`check`, `configure`, `deploy`, `local`, and ECS `run` commands to authorize that use.
+`check`, `configure`, `deploy`, `local`, and workflow `run` commands to authorize that use.
 Root credentials are never copied into worker images or task definitions; ECS
 supplies temporary task-role credentials automatically. The `local` command reads
 application secrets on the host and pipes them into the dry-run container without
@@ -106,7 +108,7 @@ globally unique; the example includes the account and region.
 
 ## 3. Verify locally before deploying
 
-No automated tests or mocks are included. Run these direct checks:
+For this session rollout, use direct checks; do not add mocks/test files or run test suites:
 
 ```sh
 npx --yes bun@1.3.3 run typecheck
@@ -123,9 +125,10 @@ updates disabled. Bun and base images are version/digest-pinned. Revisit browser
 and base-image security updates deliberately; a pinned image is not an automatic
 security-update mechanism.
 
-Inspect `cdk/cdk.out/BankImportStack.template.json`: exactly two task definitions,
-two disabled schedules, no NAT gateways, no security-group ingress, no DynamoDB,
-no auth API/Lambda, and no BMO/Tangerine resources. Task definitions should say
+Inspect `cdk/cdk.out/BankImportStack.template.json`: three task definitions,
+three import schedules plus three gated session-maintenance schedules, no NAT gateways or security-group ingress, three Step Functions
+workflows, and no BMO/Tangerine resources. EQ private state and its coordinator
+are owned by the dependent `TransactionsStack`; deploy that stack first. Task definitions should say
 ARM64, 1024 CPU, 2048 memory, and `DRY_RUN=true`.
 
 Do not treat successful synthesis/browser startup as a successful bank login.
@@ -338,7 +341,8 @@ repeat-import checks and requested activation, commit to main, and push.
 - First live NBDB task: `9568a351ae1c459894ce5a3b39134a68`, worker exit 0.
   The approved CAD -$91.80 RDSP adjustment was written. CAD Cash was excluded.
 - Current live configuration enables both schedules in `America/Halifax`:
-  Rogers at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00; NBDB ten minutes later.
+  Rogers at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00; NBDB at 17:00
+  Monday through Friday.
   Schedules set `DRY_RUN=false`; manual task definitions retain their safe
   `DRY_RUN=true` default. The ignored local deployment configuration records
   both banks as enabled and verified. Example configuration still defaults off.
@@ -364,3 +368,290 @@ Do not destroy the stack as a rollback. Code rollback does not undo YNAB imports
 review/reverse incorrect imported transactions separately using the budget export.
 Never delete shared secrets, SMS infrastructure, or CDK bootstrap resources as
 part of this application's cleanup.
+
+
+## EQ Bank operation
+
+Deploy the `transactions` repository's `TransactionsStack` before `BankImportStack`.
+Merge `EQ_BANK_USERNAME` and `EQ_BANK_PASSWORD` into the existing `bank-import`
+Secrets Manager JSON without replacing any other keys. Credentials and browser
+headers must never be committed or printed. EQ history starts on `2026-10-02`.
+
+Exactly one open YNAB account note must contain each bank UUID:
+
+| Account | Bank UUID |
+| --- | --- |
+| EQ Bank Chequing | `50ef2940-404a-5073-8472-5e0f6bd3c398` |
+| EQ Bank Card | `13a60c53-989f-5c2e-88bd-6eddacd972be` |
+
+`bank-import-eq` runs the EQ Fargate task with `.sync`, then invokes
+`transactions-eq-coordinator`. Version 1 jobs and results are exchanged through
+`jobs/<execution-name>/job.json` and `result.json` in the private, encrypted
+`transactions-eq-state-187489282488-ca-central-1` bucket. Each retrieval attempt
+has a fresh request ID; old result objects cannot complete a newer attempt.
+`preview.json` contains reconciliation counts, not credentials.
+
+The EQ Linux task runs the Node 24 runtime and official Chromium already bundled
+in the pinned Playwright image. Its entry point is `node-index.mjs`, built with
+external packages and syntax-checked during the image build. Rogers and NBDB keep
+their Bun/CloakBrowser entry points. Live comparison of the same ARM64 image found
+that Bun 1.3.3 stalled during EQ authentication/history transport; Node completed
+fresh login, MFA, complete history and browser shutdown both locally and in Fargate.
+HTTP/2 pseudo-headers from Chromium are excluded from authenticated history requests.
+
+Failures retain `transport-diagnostic.json` under the private job prefix with
+allowlisted routes, status codes and process resource counters. Diagnostics omit
+query strings, request bodies, cookies and authentication headers. A stalled EQ
+browser shutdown is bounded, allowing a failed result to reach the coordinator.
+
+The `TransactionsEQState` DynamoDB lease serializes local verification, alert
+lookups and scheduled runs. Stable ledger entries (`tx#...`) record YNAB IDs;
+original message IDs (`alert#...`) prevent repeated handling. Pending rows use
+fingerprints with occurrence numbers, so identical purchases remain separate.
+Posting uses bank references or a unique merchant/original currency amount match
+within fourteen calendar days. Ambiguous matches are held under `review#...`,
+with candidate ledger keys, a reason and the private job reference. Missing
+pending rows are retained. Updates preserve user categorization, approval and
+memo; the three inspected reconciled funding transfers are adopted unchanged.
+Future card loads and deposits use signed milliunits and independent entries.
+
+The browser restores encrypted cookies, local storage and per-origin session
+storage from `session/browser-v1.json`. An unusable session falls back to one
+fresh login. MFA matches `alert@eqbank.ca`, subject prefix
+`EQ Bank One Time Passcode - `, a recent delivery time and a single six-digit
+code. Polling covers every mailbox, including read messages in Trash. Rejected
+credentials set `credentials-blocked` and notify Pushover. After privately fixing
+the secret, an operator may remove that single circuit-breaker item to resume;
+do not delete the transaction ledger or notification markers.
+
+Use live verification only; do not add mocks or run test suites:
+
+```sh
+bun run typecheck
+npm --prefix cdk run typecheck
+node scripts/eq-local.mjs --fresh-login
+node scripts/eq-local.mjs
+node scripts/deploy.mjs run eq-bank --allow-root
+```
+
+The local helper performs real read-only bank retrieval with the same lease.
+A cloud run must finish with Step Functions `SUCCEEDED`, worker exit code zero,
+a complete result with matching request ID, correct account mappings and sensible
+preview counts. A dry run writes private session/diagnostic objects and leases,
+but never YNAB transactions or transaction ledger entries. After inspecting it:
+
+```sh
+node scripts/deploy.mjs run eq-bank --live --approve-imports --allow-root
+```
+
+Historical and scheduled imports stay quiet on success. Purchase alerts alone
+send a notification after the merchant is resolved from bank history. Missing
+activity is looked up again after one, five and fifteen minutes, then fails with
+a notification instead of fabricating a merchant.
+
+Fastmail standard UI rules require **all** conditions: From `alert@eqbank.ca`
+and the quoted subject phrase. Preserve custom Sieve and existing rule order.
+
+| Name | Quoted subject phrase | Actions |
+| --- | --- | --- |
+| EQ Bank Transactions | `"Purchase made on your EQ Bank Card"` | Mark read; send a copy to `transactions@fredericks.app`; Trash |
+| EQ Bank Verification Codes | `"EQ Bank One Time Passcode"` | Mark read; Trash |
+| EQ Bank New Device Sign-ins | `"Security Alert: New Device Sign-in"` | Mark read; Trash |
+
+Place transaction forwarding immediately after Rogers Bank Transactions. Put
+cleanup beside the existing verification rules and apply only cleanup to existing
+messages. Forwarding applies to newly arriving purchase alerts. Transactions
+also enforces the exact sender/subject purchase allowlist before its ordinary
+last-four/AI extraction path.
+
+After live verification, enable intake with SSM `/transactions/eq-enabled=true`
+and include `eq-bank` in both `verifiedBanks` and `enabledBanks` in the ignored
+local deployment configuration, preserving Rogers and NBDB. Deploy to enable
+`bank-import-eq-bank` at four-hour intervals. The default SSM intake value on
+initial stack creation is false; an unchanged redeployment preserves the current
+operator value.
+
+Rollback: disable the EQ Fastmail forwarding rule, set
+`/transactions/eq-enabled=false`, remove only `eq-bank` from `enabledBanks` and
+deploy (or disable only the `bank-import-eq-bank` schedule). Let active EQ jobs
+finish before stopping execution. Keep `TransactionsEQState` and private state
+intact. Rogers and NBDB schedules require no changes.
+
+### Verified rollout state — October 5, 2026
+
+- Both YNAB account notes and Secrets Manager keys are configured.
+- Node on ARM64 Fargate completed fresh login, MFA from read Trash, six-record
+  retrieval and saved-session restoration in new browser processes.
+- Two serialized Step Functions dry runs succeeded: manual catch-up and the
+  inspected purchase-alert replay. Both proposed three adopted transfers and
+  three new pending purchases, with no ambiguous matches.
+- The first live import adopted three transfers and created three uncleared card
+  purchases. All pre-existing YNAB entries were compared with the private snapshot
+  at `verification/ynab-before-2026-10-05.json` and remained identical.
+- A live replay created no additional records and delivered one resolved purchase
+  notification. Repeating its original message ID completed without another
+  worker or notification. Six ledger records and one handled alert are stored.
+- EQ verification/new-device cleanup rules are active and apply to existing mail.
+  At the user's request for a live authorization check, purchase forwarding and
+  SSM intake are enabled. The standard purchase rule (`36542015`) uses all
+  conditions, the exact sender and quoted subject, and forwards only new arrivals
+  before filing to Trash. It is immediately after Rogers Bank Transactions.
+  The user requested immediate schedule activation after the live alert check:
+  the EQ schedule is enabled at midnight, 04:00, 08:00, 12:00, 16:00 and 20:00
+  America/Halifax, and EQ is included in local enabled/verified bank configuration.
+  A natural pending-to-posted update remains to be observed. The Codex follow-up
+  named “Finish EQ Bank rollout after settlement” is currently paused.
+
+The imported pending YNAB IDs are `e28da925-0e84-4441-bde9-8dd095f1021b`,
+`c644c50d-f4ca-4356-88db-89c890a3ec52` and
+`b0dbdf30-0eec-4987-92aa-23d165bcbe23`. The user submitted a CAD1 authorization
+on the saved EQ card ending 5310. Stripe payment `pi_3UNHYGRVZdjJAraL0iJGCfe5`
+remains uncaptured. Its new EQ email was automatically forwarded and filed read
+in Trash. Workflow `eq-alert-57eeeeb5a94948450242a2d5626721a1e0210e1730c0729ab5224622de89`
+succeeded, retrieved seven records, resolved Quiz Solver for Moodle, and created
+one uncleared CAD1 entry: `c0b22c8a-dbd4-4ade-ad79-8da2fe4bb75a`. Pushover
+accepted the notification and its once-only marker is stored. Saved-session
+expiry fell back to fresh login successfully. The user requested no repeat run;
+the newly started read-only duplicate check was aborted and its lease released.
+No capture or test suite was run.
+
+### Maintenance handling — October 6, 2026
+
+The 04:00 Halifax failure displayed EQ's scheduled-maintenance page; it did not
+reach credential entry or import transactions. The 08:00 scheduled run recovered
+and retrieved seven records without changes.
+
+The worker recognizes the observed maintenance wording together with the EQ
+status-site reference and returns `bank-maintenance` in the existing version-1
+result. Scheduled jobs finish as `deferred-maintenance`, release their lease and
+wait for the next four-hour run. `maintenance-state` in the existing ledger table
+counts distinct consecutive scheduled executions. Two affected runs notify once
+per episode; a non-maintenance scheduled outcome resets the count and successful
+retrieval ends the episode. Manual runs report maintenance, while purchase alerts
+retain the one-, five- and fifteen-minute retries and notify on exhaustion.
+Dry runs do not change maintenance counters or send maintenance notifications.
+
+Deploy transactions before bank-import. Verification uses type checks, Go builds,
+workflow inspection, with no manual bank run, Stripe authorization, mocks or
+test suites. The user requested no verification cron; the temporary observation
+follow-up was removed. Both stacks are deployed. Quiet maintenance deferral and
+escalation still require observation during a future real maintenance window.
+
+## Session reuse and browser recovery
+
+All three schedules now start Step Functions workflows. Node Lambdas retrieve
+bank data without Chromium when a verified saved session is usable. A rejected
+or expired session launches one browser authentication attempt under the bank's
+lease. The browser validates account access, saves encrypted private state, closes,
+and publishes a task-token callback. Importing can continue without waiting for
+Fargate teardown. Workflow payloads contain job IDs and outcomes, never tokens.
+
+EQ keeps its existing coordinator, ledger, bucket, and lease. Rogers and NBDB
+use isolated keys in the new private session bucket/table. Immutable session
+objects are published through a lease-fenced DynamoDB pointer; token rotation is
+saved before releasing the lease. EQ releases its lease during missing-activity
+waits and obtains a new request ID when retrying.
+
+Each bank has a separate SSM rollout policy:
+
+- `/bank-import/sessions/eq-bank`
+- `/bank-import/sessions/rogers-bank`
+- `/bank-import/sessions/nbdb`
+
+The JSON fields `direct`, `renew`, and `maintenance` start as `false`. Enable
+`direct` only after a real browser capture and a separate Lambda invocation
+return matching account/transaction data. Enable `renew` only after the actual
+renewal exchange succeeds from Lambda and another invocation can use its rotated
+state. The internal read-only verification invocation is:
+
+```sh
+aws lambda invoke --region ca-central-1 \
+  --function-name bank-import-session-eq-bank \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"action":"probe","baselineJobId":"ACTUAL_BROWSER_JOB_ID"}' \
+  /tmp/bank-session-proof.json
+```
+
+Repeat with `"renew":true`, then another invocation without renewal. Proofs contain
+counts and comparison results only; authentication stays in private state. Change
+the function suffix for Rogers/NBDB. A probe acquires the same lease as normal
+work and never accesses YNAB. Start a real browser baseline with the ordinary
+`run` helper while that bank's `direct` policy is false.
+
+Maintenance dispatchers run each minute but do work only when due. Enable the
+`maintenance` switch after verifying renewal and browser fallback. These jobs use
+`purpose: "maintain-session"`; their processing path cannot import transactions
+or adjust balances. If renewal needs fresh authentication, maintenance launches
+the browser automatically. Bank-enforced absolute limits still require login.
+
+Credential rejection or unsupported challenges set a per-bank circuit breaker;
+network failures and throttling use bounded backoff. The first actionable session
+failure notifies once until recovery. Review the private failure metadata, fix
+the cause, then remove only that bank's `credentials-blocked` key to resume.
+Never print session objects, cookies, OTPs, or request headers in diagnostics.
+
+To roll back an individual bank to browser retrieval, set its policy to
+`{"direct":false,"renew":false,"maintenance":false}`. Existing schedule times,
+Rogers email notifications, EQ matching/deduplication, and NBDB exclusions remain
+unchanged. NBDB imports deliberately have no automatic retry around an uncertain
+YNAB adjustment; review any `import#...` marker left in `started` state.
+
+CloudWatch emits `bank-stage` durations, `bank-api-response` status/operation,
+`session-captured`, `session-renewed`, and `browser-result-published`. EQ previews
+include elapsed milliseconds from alert intake when available. Use workflow
+history to compare browser frequency and warm API latency; measure fresh logins
+separately from the under-15-second EQ notification target.
+
+
+### Observed renewal protocols (2026-10-06)
+
+- EQ: Auth0 login produces EQ access tokens. The EQ-specific refresh endpoint
+  accepts the captured client ID plus authenticated headers/cookies. Observed
+  token life was seven minutes and absolute session life was thirty minutes.
+  Maintenance renews within that window, then automatically logs in again.
+- Rogers: preserve both access/refresh tokens and device/account/customer IDs.
+  Auth response headers and SecureLS browser storage supply the token pair.
+  Successful early renewal can return the same pair; that is not an expired
+  session. HTTP 440 or JSON status 440 requests browser recovery.
+- NBDB: this account uses authorization code + PKCE, not a refresh-token grant.
+  The captured client ID, redirect URI, scope and Okta session cookies support
+  `prompt=none` authorization followed by a fresh code exchange. State, PKCE and
+  allowed callback origin/path are validated. Login is required when that session
+  no longer authorizes silently. Do not substitute an assumed refresh-token flow.
+
+Verification used real bank data with dry-run/read-only jobs. EQ's browser
+baseline returned seven records in 120 seconds; the first complete API workflow
+returned the same history in 4.8 seconds. Two simultaneous EQ checks serialized
+without browsers. At the actual absolute-session limit, maintenance launched one
+browser, saved fresh authentication and completed; the waiting maintenance run
+reused it. Both workflows took the session-only path, with no reconciliation.
+NBDB renewal and a later invocation each returned both expected CAD accounts,
+matching the browser snapshot. Its renewal plus retrieval took 2.4 seconds.
+These are observed workflow timings, not a measurement of a new purchase's email
+arrival through final notification delivery.
+
+Browser tasks also carry the request ID independently of the stored job. An
+atomic active-request condition prevents a delayed worker from publishing a
+session pointer after a newer attempt has become active, even if the job ID is
+reused. Result envelopes must match that attempt before they can be imported.
+
+Rogers also passed actual token rotation inside its renewal window (2.7 seconds
+including account/transaction retrieval), followed by a separate invocation using
+the rotated pair (3.0 seconds). All three `direct`, `renew`, and `maintenance`
+policies are enabled. Browser rollback requests a fresh login; it does not attempt
+to restore browser token storage that may predate API-side rotation. Rogers keeps
+its saved device identifier when beginning that fresh login.
+
+Live validation caught and repaired a missing Step Functions choice field, a
+Node module interoperability issue, stale browser restoration, and premature
+Rogers renewal handling. One EQ maintenance run failed during a packaging update;
+subsequent automatic maintenance and actual expiry recovery succeeded. No YNAB
+writes were issued by the verification jobs. Rejected-password/challenge and
+callback-failure branches were reviewed without deliberately provoking bank
+lockouts or injecting fake bank responses.
+
+The complete warm Rogers dry-run workflow finished in 3.7 seconds and NBDB in
+1.8 seconds, both without a browser. NBDB maintenance also encountered an expired
+server session, launched one browser, and completed authentication; a concurrent
+maintenance job waited for the lease and reused the result. Both recorded
+`maintain-session` processing and made no YNAB changes.

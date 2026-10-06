@@ -1,4 +1,5 @@
 import * as cdk from "aws-cdk-lib";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -8,10 +9,17 @@ import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import path from "node:path";
+import { configureEQ } from "./eq";
+import {
+  bankWorkflow,
+  maintenanceSchedule,
+  sessionLambda,
+  sessionResources,
+} from "./sessions";
 
 export const ACCOUNT = "187489282488";
 export const REGION = "ca-central-1";
-export const BANKS = ["rogers-bank", "nbdb"] as const;
+export const BANKS = ["rogers-bank", "nbdb", "eq-bank"] as const;
 
 export function parseBankList(value: unknown): string[] {
   if (value === undefined || value === "") return [];
@@ -22,7 +30,7 @@ export function parseBankList(value: unknown): string[] {
     new Set(banks).size !== banks.length
   )
     throw new Error(
-      "Bank list must contain only unique rogers-bank and nbdb entries",
+      "Bank list must contain only unique supported bank entries",
     );
   return banks;
 }
@@ -100,8 +108,10 @@ export function buildStack(app: cdk.App) {
     // Manual launches must explicitly override to false after reviewing their preview.
     DRY_RUN: "true",
   };
+  const sharedSessions = sessionResources(stack);
   for (const bank of BANKS) {
-    const name = bank === "nbdb" ? "NBDB" : "RogersBank";
+    const name =
+      bank === "nbdb" ? "NBDB" : bank === "eq-bank" ? "EQBank" : "RogersBank";
     const task = new ecs.FargateTaskDefinition(
       stack,
       `BankImportTaskDefinition-${name}`,
@@ -114,27 +124,46 @@ export function buildStack(app: cdk.App) {
         },
       },
     );
+    const environment = {
+      ...common,
+      BANK: bank,
+      ...(bank === "nbdb"
+        ? {
+            YNAB_ADJUSTMENT_PAYEE_ID: parameter("ynab-adjustment-payee-id"),
+            NBDB_EXCLUDED_ACCOUNT_IDS: parameter("nbdb-excluded-account-ids"),
+          }
+        : bank === "rogers-bank"
+          ? {
+              ROGERS_EMAIL_SENDER: parameter("rogers-email-sender"),
+              ROGERS_EMAIL_SUBJECT: parameter("rogers-email-subject"),
+              ROGERS_EMAIL_CODE_LENGTH: parameter("rogers-email-code-length"),
+            }
+          : {}),
+    };
     task.addContainer("bank-import", {
       image,
+      // EQ's Playwright transport is verified with the Node runtime bundled in
+      // the pinned image; existing bank workers continue to use Bun.
+      ...(bank === "eq-bank"
+        ? {
+            entryPoint: [
+              "timeout",
+              "--signal=TERM",
+              "--kill-after=119s",
+              "300s",
+              "xvfb-run",
+              "-a",
+              "node",
+            ],
+            command: ["node-index.mjs"],
+          }
+        : {}),
       essential: true,
       stopTimeout: cdk.Duration.seconds(119),
       linuxParameters: new ecs.LinuxParameters(stack, `Init-${name}`, {
         initProcessEnabled: true,
       }),
-      environment: {
-        ...common,
-        BANK: bank,
-        ...(bank === "nbdb"
-          ? {
-              YNAB_ADJUSTMENT_PAYEE_ID: parameter("ynab-adjustment-payee-id"),
-              NBDB_EXCLUDED_ACCOUNT_IDS: parameter("nbdb-excluded-account-ids"),
-            }
-          : {
-              ROGERS_EMAIL_SENDER: parameter("rogers-email-sender"),
-              ROGERS_EMAIL_SUBJECT: parameter("rogers-email-subject"),
-              ROGERS_EMAIL_CODE_LENGTH: parameter("rogers-email-code-length"),
-            }),
-      },
+      environment,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: bank,
         logGroup,
@@ -146,7 +175,11 @@ export function buildStack(app: cdk.App) {
       // Reuse the private ECR asset: no public-registry pull at task startup.
       image,
       entryPoint: ["sh", "-c"],
-      command: ["sleep 300; exit 1"],
+      command: [
+        bank === "eq-bank"
+          ? "trap 'exit 0' TERM INT; sleep 300 & wait $!; exit 1"
+          : "sleep 300; exit 1",
+      ],
       essential: true,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `watchdog-${bank}`,
@@ -155,27 +188,82 @@ export function buildStack(app: cdk.App) {
     });
     traces.grantPut(task.taskRole);
     secret.grantRead(task.taskRole);
+    const sessionBucket =
+      bank === "eq-bank"
+        ? s3.Bucket.fromBucketName(
+            stack,
+            "EQSessionBucket",
+            `transactions-eq-state-${stack.account}-${stack.region}`,
+          )
+        : sharedSessions.bucket;
+    const sessionTable =
+      bank === "eq-bank"
+        ? dynamodb.Table.fromTableName(
+            stack,
+            "EQSessionTable",
+            "TransactionsEQState",
+          )
+        : sharedSessions.table;
+    const sessionFn = sessionLambda(
+      stack,
+      bank,
+      task,
+      sessionBucket,
+      sessionTable,
+      environment,
+    );
+    secret.grantRead(sessionFn);
+    if (bank === "eq-bank") {
+      const workflow = configureEQ(
+        stack,
+        task,
+        cluster,
+        vpc,
+        securityGroup,
+        scheduleGroup,
+        timezone,
+        enabled.includes(bank),
+        sessionFn,
+      );
+      maintenanceSchedule(
+        stack,
+        bank,
+        sessionFn,
+        workflow.attrArn,
+        scheduleGroup,
+        enabled.includes(bank),
+      );
+      new cdk.CfnOutput(stack, `${name}TaskDefinitionArn`, {
+        value: task.taskDefinitionArn,
+      });
+      continue;
+    }
+    const workflow = bankWorkflow(
+      stack,
+      bank,
+      sessionFn,
+      task,
+      cluster,
+      vpc,
+      securityGroup,
+    );
+    maintenanceSchedule(
+      stack,
+      bank,
+      sessionFn,
+      workflow.attrArn,
+      scheduleGroup,
+      enabled.includes(bank),
+    );
     const role = new iam.Role(
       stack,
       `BankImportSchedulerExecutionRole-${name}`,
-      {
-        assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
-      },
+      { assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com") },
     );
     role.addToPolicy(
       new iam.PolicyStatement({
-        actions: ["ecs:RunTask"],
-        resources: [task.taskDefinitionArn],
-        conditions: { ArnEquals: { "ecs:cluster": cluster.clusterArn } },
-      }),
-    );
-    role.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["iam:PassRole"],
-        resources: [task.taskRole.roleArn, task.executionRole!.roleArn],
-        conditions: {
-          StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" },
-        },
+        actions: ["states:StartExecution"],
+        resources: [workflow.attrArn],
       }),
     );
     const schedule = new scheduler.CfnSchedule(
@@ -187,10 +275,10 @@ export function buildStack(app: cdk.App) {
         state: enabled.includes(bank) ? "ENABLED" : "DISABLED",
         flexibleTimeWindow: { mode: "OFF" },
         scheduleExpression:
-          bank === "nbdb" ? "cron(10 0/4 * * ? *)" : "cron(0 0/4 * * ? *)",
+          bank === "nbdb" ? "cron(0 17 ? * MON-FRI *)" : "cron(0 0/4 * * ? *)",
         scheduleExpressionTimezone: timezone,
         target: {
-          arn: cluster.clusterArn,
+          arn: workflow.attrArn,
           roleArn: role.roleArn,
           // Avoid retries producing overlapping bank logins or balance adjustments.
           retryPolicy: {
@@ -198,25 +286,11 @@ export function buildStack(app: cdk.App) {
             maximumEventAgeInSeconds: 60,
           },
           input: JSON.stringify({
-            containerOverrides: [
-              {
-                name: "bank-import",
-                environment: [{ name: "DRY_RUN", value: "false" }],
-              },
-            ],
+            version: 1,
+            source: "scheduled",
+            purpose: "retrieve",
+            dryRun: false,
           }),
-          ecsParameters: {
-            taskDefinitionArn: task.taskDefinitionArn,
-            launchType: "FARGATE",
-            platformVersion: "1.4.0",
-            networkConfiguration: {
-              awsvpcConfiguration: {
-                subnets: vpc.publicSubnets.map((subnet) => subnet.subnetId),
-                securityGroups: [securityGroup.securityGroupId],
-                assignPublicIp: "ENABLED",
-              },
-            },
-          },
         },
       },
     );
@@ -224,6 +298,7 @@ export function buildStack(app: cdk.App) {
       value: task.taskDefinitionArn,
     });
     new cdk.CfnOutput(stack, `${name}ScheduleName`, { value: schedule.ref });
+    new cdk.CfnOutput(stack, `${name}WorkflowArn`, { value: workflow.attrArn });
   }
   for (const [id, value] of Object.entries({
     ClusterArn: cluster.clusterArn,

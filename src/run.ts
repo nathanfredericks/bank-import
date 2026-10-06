@@ -1,4 +1,5 @@
 import * as ynab from "ynab";
+import { runEQJob } from "./banks/eq-bank/job";
 import { NBDB } from "./banks/nbdb/NBDB";
 import { RogersBank } from "./banks/rogers-bank/RogersBank";
 import { BankName } from "./banks/types";
@@ -8,6 +9,14 @@ import secrets from "./utils/secrets";
 import { createYnabImporter } from "./ynab";
 
 export async function run() {
+  if (process.env.BANK_JOB_ID) {
+    await (await import("./sessions/worker")).runSessionWorker();
+    return;
+  }
+  if (env.BANK === BankName.EQBank) {
+    await runEQJob();
+    return;
+  }
   const importer = createYnabImporter(new ynab.API(secrets.YNAB_ACCESS_TOKEN), {
     budgetId: env.YNAB_BUDGET_ID,
     adjustmentPayeeId: env.YNAB_ADJUSTMENT_PAYEE_ID,
@@ -23,7 +32,7 @@ export async function run() {
       secrets.ROGERS_BANK_PASSWORD,
     );
     await importer.importTransactions(bank.getAccounts());
-  } else {
+  } else if (env.BANK === BankName.NBDB) {
     const bank = await NBDB.create(secrets.NBDB_USER_ID, secrets.NBDB_PASSWORD);
     const accounts = bank.getAccounts().filter((account) => {
       if (!env.NBDB_EXCLUDED_ACCOUNT_IDS.includes(account.id)) return true;
@@ -33,6 +42,8 @@ export async function run() {
       return false;
     });
     await importer.updateAccountBalances(accounts);
+  } else {
+    throw new Error("Unsupported bank");
   }
   logger.info(`Completed ${env.BANK}`);
 }

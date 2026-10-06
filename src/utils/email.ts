@@ -17,11 +17,14 @@ const Session = z.object({
   apiUrl: z.url(),
   primaryAccounts: z.record(z.string(), z.string()),
 });
-const Email = z.object({
+const EmailMetadata = z.object({
   id: z.string(),
   receivedAt: z.string(),
   subject: z.string(),
   from: z.array(z.object({ email: z.string() })),
+});
+const EmailBody = z.object({
+  id: z.string(),
   textBody: z.array(z.object({ partId: z.string() })).default([]),
   htmlBody: z.array(z.object({ partId: z.string() })).default([]),
   bodyValues: z.record(
@@ -34,6 +37,7 @@ export type EmailChallenge = {
   afterDate: Date;
   sender: string;
   subject: string;
+  subjectPrefix?: boolean;
   codeLength: number;
 };
 
@@ -55,13 +59,19 @@ export async function readEmailCode(
     throw new Error("Invalid verification code length");
   const request = options.fetch ?? fetch;
   const deadline = Date.now() + (options.timeoutMs ?? 60_000);
+  let candidateCount = 0;
+  let matchingCount = 0;
+  const timeoutError = () =>
+    new Error(
+      `Verification email timed out (recent candidates: ${candidateCount}; matching messages: ${matchingCount})`,
+    );
   const headers = {
     Authorization: `Bearer ${options.token}`,
     "Content-Type": "application/json",
   };
   async function getJson(url: string, body?: unknown): Promise<any> {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("Verification email timed out");
+    if (remaining <= 0) throw timeoutError();
     const response = await request(url, {
       method: body ? "POST" : "GET",
       headers,
@@ -102,60 +112,70 @@ export async function readEmailCode(
         subject: challenge.subject,
       },
       sort: [{ property: "receivedAt", isAscending: false }],
-      limit: 10,
+      limit: 100,
     });
     const ids = z.array(z.string()).parse(query.ids);
+    candidateCount = ids.length;
     if (ids.length) {
-      const result = await call("Email/get", {
+      const metadataResult = await call("Email/get", {
         ids,
-        properties: [
-          "id",
-          "receivedAt",
-          "subject",
-          "from",
-          "textBody",
-          "htmlBody",
-          "bodyValues",
-        ],
-        fetchTextBodyValues: true,
-        fetchHTMLBodyValues: true,
-        maxBodyValueBytes: 100_000,
+        properties: ["id", "receivedAt", "subject", "from"],
       });
-      const emails = z
-        .array(Email)
-        .parse(result.list)
-        .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
-      for (const email of emails) {
-        if (
-          !(Date.parse(email.receivedAt) >= challenge.afterDate.getTime()) ||
-          email.subject !== challenge.subject ||
-          !email.from.some(
-            (from) =>
-              from.email.toLowerCase() === challenge.sender.toLowerCase(),
-          )
+      const matchingEmails = z
+        .array(EmailMetadata)
+        .parse(metadataResult.list)
+        .filter(
+          (email) =>
+            Date.parse(email.receivedAt) >= challenge.afterDate.getTime() &&
+            (challenge.subjectPrefix
+              ? email.subject.startsWith(challenge.subject)
+              : email.subject === challenge.subject) &&
+            email.from.some(
+              (from) =>
+                from.email.toLowerCase() === challenge.sender.toLowerCase(),
+            ),
         )
-          continue;
-        const texts = [
-          ...email.textBody.map((part) => email.bodyValues[part.partId]),
-          ...email.htmlBody.map((part) => {
-            const body = email.bodyValues[part.partId];
-            return (
-              body && {
-                ...body,
-                value: convert(body.value, {
-                  selectors: [
-                    { selector: "a", options: { ignoreHref: true } },
-                    { selector: "img", format: "skip" },
-                  ],
-                }),
-              }
-            );
-          }),
-        ];
-        for (const body of texts) {
-          if (!body || body.isTruncated) continue;
-          const codes = [...new Set(body.value.match(pattern) ?? [])];
-          if (codes.length === 1) return codes[0];
+        .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
+      matchingCount = matchingEmails.length;
+      if (matchingEmails.length) {
+        const bodyResult = await call("Email/get", {
+          ids: matchingEmails.map((email) => email.id),
+          properties: ["id", "textBody", "htmlBody", "bodyValues"],
+          fetchTextBodyValues: true,
+          fetchHTMLBodyValues: true,
+          maxBodyValueBytes: 100_000,
+        });
+        const bodies = new Map(
+          z
+            .array(EmailBody)
+            .parse(bodyResult.list)
+            .map((email) => [email.id, email]),
+        );
+        for (const metadata of matchingEmails) {
+          const email = bodies.get(metadata.id);
+          if (!email) continue;
+          const texts = [
+            ...email.textBody.map((part) => email.bodyValues[part.partId]),
+            ...email.htmlBody.map((part) => {
+              const body = email.bodyValues[part.partId];
+              return (
+                body && {
+                  ...body,
+                  value: convert(body.value, {
+                    selectors: [
+                      { selector: "a", options: { ignoreHref: true } },
+                      { selector: "img", format: "skip" },
+                    ],
+                  }),
+                }
+              );
+            }),
+          ];
+          for (const body of texts) {
+            if (!body || body.isTruncated) continue;
+            const codes = [...new Set(body.value.match(pattern) ?? [])];
+            if (codes.length === 1) return codes[0];
+          }
         }
       }
     }
@@ -166,5 +186,5 @@ export async function readEmailCode(
       ),
     );
   }
-  throw new Error("Verification email timed out");
+  throw timeoutError();
 }

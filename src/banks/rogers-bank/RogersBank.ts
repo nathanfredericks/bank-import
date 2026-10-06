@@ -1,5 +1,6 @@
 import { formatISO, subDays } from "date-fns";
 import type { Response } from "playwright-core";
+import { BankFailure } from "../../sessions/types";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
 import env from "../../utils/env";
 import logger from "../../utils/logger";
@@ -16,15 +17,15 @@ export class RogersBank extends Bank {
     const rogersBank = new RogersBank();
     try {
       await rogersBank.launchBrowser();
+      await rogersBank.restoreSavedSession();
       await rogersBank.login(username, password);
+      await rogersBank.persistSession();
       await rogersBank.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await rogersBank.handleError(error);
-      } else {
-        throw error;
       }
-      throw new Error("Rogers Bank login or account discovery failed");
+      throw error;
     }
     return rogersBank;
   }
@@ -175,8 +176,18 @@ export class RogersBank extends Bank {
         page.getByRole("button", { name: "Sign in" }).click(),
       ]);
       const isTwoFactorAuthenticationRequired = response.status() === 412;
-      if (!response.ok() && !isTwoFactorAuthenticationRequired)
-        throw new Error("Rogers credentials were rejected");
+      if (!response.ok() && !isTwoFactorAuthenticationRequired) {
+        const status = response.status();
+        throw new BankFailure(
+          [400, 401].includes(status)
+            ? "credentials-rejected"
+            : status === 403
+              ? "challenge-required"
+              : status === 429
+                ? "throttled"
+                : "transport-failed",
+        );
+      }
 
       if (isTwoFactorAuthenticationRequired) {
         this.diagnosticStage = "email-verification";
@@ -184,7 +195,12 @@ export class RogersBank extends Bank {
         logger.debug("Filling in two-factor authentication code");
         // Masked email labels still contain @; never fall back to SMS.
         const byEmailLabel = page.getByRole("radio", { name: /email|@/i });
-        await byEmailLabel.first().waitFor({ state: "visible" });
+        await byEmailLabel
+          .first()
+          .waitFor({ state: "visible" })
+          .catch(() => {
+            throw new BankFailure("challenge-required");
+          });
         if ((await byEmailLabel.count()) !== 1)
           throw new Error("Expected one email verification option");
         await byEmailLabel.check();

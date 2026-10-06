@@ -1,8 +1,10 @@
 import { launchContext } from "cloakbrowser";
 import { format } from "date-fns";
 import { randomUUID } from "node:crypto";
-import { BrowserContext, Page } from "playwright-core";
+import { BrowserContext, Page, chromium } from "playwright-core";
 import { z } from "zod";
+import { SessionCapture } from "../sessions/capture";
+import { SessionStore } from "../sessions/store";
 import env from "../utils/env";
 import logger from "../utils/logger";
 import { uploadFile } from "../utils/s3";
@@ -12,6 +14,7 @@ export class Bank {
   private readonly bank: BankName;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private sessionCapture: SessionCapture | null = null;
   protected date = new Date();
   protected diagnosticStage = "browser-start";
   private accounts: z.infer<typeof Account>[] = [];
@@ -20,15 +23,27 @@ export class Bank {
     this.bank = bank;
   }
 
-  protected async launchBrowser() {
+  protected async launchBrowser(options: { standardChromium?: boolean } = {}) {
     logger.debug("Launching browser");
-    this.context = await launchContext({
-      headless: false,
-      humanize: true,
-      humanPreset: "careful",
-      geoip: true,
-      timezone: "America/Halifax",
-    });
+    if (options.standardChromium) {
+      // Keep EQ's Linux browser reproducible with the official Chromium
+      // bundled with the pinned Playwright image.
+      const browser = await chromium.launch({ headless: false });
+      this.context = await browser.newContext({
+        timezoneId: "America/Halifax",
+      });
+      logger.info("EQ using bundled Playwright Chromium");
+    } else {
+      this.context = await launchContext({
+        headless: false,
+        humanize: true,
+        humanPreset: "careful",
+        geoip: true,
+        timezone: "America/Halifax",
+      });
+    }
+    if (process.env.SESSION_TABLE)
+      this.sessionCapture = new SessionCapture(this.bank, this.context);
     logger.debug("Creating new page");
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(30_000);
@@ -38,9 +53,27 @@ export class Bank {
 
   protected async closeBrowser() {
     logger.debug("Closing browser");
-    await this.context?.close();
+    const context = this.context;
     this.context = null;
     this.page = null;
+    // EQ redirects can leave context.close waiting on a page. Closing its
+    // owned browser directly also closes the context and terminates Chromium.
+    if (this.bank === BankName.EQBank && context?.browser()) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          context.browser()!.close(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("EQ browser shutdown timed out")),
+              10_000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    } else await context?.close();
   }
 
   protected async handleError(_error: Error) {
@@ -55,7 +88,7 @@ export class Bank {
       failedAt: new Date().toISOString(),
       category: "bank-operation-failed",
     });
-    if (Bun.env.LOCAL_SECRETS_STDIN === "true") {
+    if (process.env.LOCAL_SECRETS_STDIN === "true") {
       await this.closeBrowser().catch(() => {});
       return;
     }
@@ -81,6 +114,51 @@ export class Bank {
     return this.page.context().cookies();
   }
 
+  protected async persistSession() {
+    await this.sessionCapture?.save();
+  }
+
+  protected async restoreSavedSession() {
+    if (!process.env.SESSION_TABLE) return false;
+    const saved = await new SessionStore().session();
+    if (!saved) return false;
+    const context = this.getContext();
+    if (process.env.BANK_FORCE_LOGIN === "true") {
+      if (this.bank === BankName.RogersBank) {
+        const device =
+          saved.state.origins
+            .find(
+              (origin) => origin.origin === "https://selfserve.rogersbank.com",
+            )
+            ?.localStorage.filter((entry) =>
+              ["deviceId", "rememberedUsername"].includes(entry.name),
+            ) ?? [];
+        await context.addInitScript((entries) => {
+          if (
+            (globalThis as any).location.origin ===
+            "https://selfserve.rogersbank.com"
+          )
+            for (const entry of entries)
+              localStorage.setItem(entry.name, entry.value);
+        }, device);
+      }
+      return false;
+    }
+    await context.addCookies(saved.state.cookies);
+    await context.addInitScript(
+      ({ origins, sessions }) => {
+        const origin = (globalThis as any).location.origin;
+        for (const item of origins.find((x) => x.origin === origin)
+          ?.localStorage ?? [])
+          localStorage.setItem(item.name, item.value);
+        for (const [key, value] of Object.entries(sessions[origin] ?? {}))
+          sessionStorage.setItem(key, value);
+      },
+      { origins: saved.state.origins, sessions: saved.sessions },
+    );
+    return true;
+  }
+
   protected async getCookiesAsString() {
     const cookies = await this.getCookies();
     return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
@@ -100,6 +178,11 @@ export class Bank {
       throw new Error("Page is not initialized");
     }
     return this.page;
+  }
+
+  protected getContext() {
+    if (!this.context) throw new Error("Browser context is not initialized");
+    return this.context;
   }
 
   public getAccounts() {

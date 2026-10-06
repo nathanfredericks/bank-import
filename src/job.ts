@@ -6,10 +6,8 @@ export async function executeJob(
   try {
     await run();
     return 0;
-  } catch {
-    // Upstream errors may contain tokens, email contents, or bank responses.
-    const message =
-      "Bank import failed. Check configuration, account mappings, and the private diagnostic trace.";
+  } catch (error) {
+    const message = failureMessage(error);
     log(message);
     try {
       await notify(message);
@@ -20,4 +18,10 @@ export async function executeJob(
     }
     return 1;
   }
+}
+
+export function failureMessage(error: unknown): string {
+  if (!(error instanceof Error)) return "Unknown bank import error";
+  const firstLine = (error.stack ?? error.message).split(/\r?\n/, 1)[0]?.trim();
+  return firstLine || `${error.name}: Bank import failed`;
 }

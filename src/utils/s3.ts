@@ -4,7 +4,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 const s3 = new S3Client({
-  region: Bun.env.AWS_REGION ?? Bun.env.AWS_DEFAULT_REGION,
+  region: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION,
 });
 export async function uploadFile(
   bucket: string,

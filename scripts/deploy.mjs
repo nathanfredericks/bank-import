@@ -9,7 +9,7 @@ class OperationalError extends Error {}
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const region = "ca-central-1";
 const account = "187489282488";
-const banks = z.enum(["rogers-bank", "nbdb"]);
+const banks = z.enum(["rogers-bank", "nbdb", "eq-bank"]);
 const Config = z
   .object({
     tracesBucketName: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/),
@@ -423,77 +423,29 @@ try {
       const out = Object.fromEntries(
         stack.Outputs.map((o) => [o.OutputKey, o.OutputValue]),
       );
-      const running = aws(
-        "ecs",
-        "list-tasks",
-        "--cluster",
-        out.ClusterArn,
-        "--desired-status",
-        "RUNNING",
-      ).taskArns;
-      if (running.length)
-        throw new OperationalError(
-          "Wait for existing bank tasks to finish before a manual run",
-        );
-      const schedules = aws(
-        "scheduler",
-        "list-schedules",
-        "--group-name",
-        "bank-import",
-      ).Schedules;
-      if (schedules.some((s) => s.State === "ENABLED"))
-        throw new OperationalError(
-          "Disable schedules before manual runs to prevent overlap",
-        );
-      const result = aws(
-        "ecs",
-        "run-task",
-        "--cluster",
-        out.ClusterArn,
-        "--task-definition",
-        out[
-          bank === "nbdb"
-            ? "NBDBTaskDefinitionArn"
-            : "RogersBankTaskDefinitionArn"
-        ],
-        "--launch-type",
-        "FARGATE",
-        "--platform-version",
-        "1.4.0",
-        "--network-configuration",
-        JSON.stringify({
-          awsvpcConfiguration: {
-            subnets: out.SubnetIds.split(","),
-            securityGroups: [out.SecurityGroupId],
-            assignPublicIp: "ENABLED",
-          },
-        }),
-        "--overrides",
-        JSON.stringify({
-          containerOverrides: [
-            {
-              name: "bank-import",
-              environment: [{ name: "DRY_RUN", value: String(!live) }],
-            },
+      {
+        const result = aws(
+          "stepfunctions",
+          "start-execution",
+          "--state-machine-arn",
+          out[
+            bank === "eq-bank"
+              ? "EQWorkflowArn"
+              : bank === "nbdb"
+                ? "NBDBWorkflowArn"
+                : "RogersBankWorkflowArn"
           ],
-        }),
-      );
-      if (result.failures?.length || !result.tasks?.length)
-        throw new OperationalError(
-          "ECS did not start the worker; inspect ECS events",
-        );
-      console.log(
-        JSON.stringify(
-          {
+          "--input",
+          JSON.stringify({
+            version: 1,
+            source: "manual",
+            purpose: "retrieve",
             dryRun: !live,
-            cluster: out.ClusterArn,
-            taskArn: result.tasks[0].taskArn,
-            logGroup: out.LogGroupName,
-          },
-          null,
-          2,
-        ),
-      );
+          }),
+        );
+        console.log(JSON.stringify({ dryRun: !live, ...result }, null, 2));
+        process.exit(0);
+      }
     }
   } else {
     console.log(

@@ -1,3 +1,4 @@
+import { BankFailure } from "../../sessions/types";
 import { getEmailTwoFactorAuthenticationCode } from "../../utils/2fa";
 import logger from "../../utils/logger";
 import { Bank } from "../Bank";
@@ -13,16 +14,16 @@ export class NBDB extends Bank {
     const nbdb = new NBDB();
     try {
       await nbdb.launchBrowser();
+      await nbdb.restoreSavedSession();
       await nbdb.login(userID, password);
+      await nbdb.persistSession();
       await nbdb.closeBrowser();
     } catch (error) {
       if (error instanceof Error) {
         await nbdb.logLoginDiagnostics(error).catch(() => {});
         await nbdb.handleError(error);
-      } else {
-        throw error;
       }
-      throw new Error("NBDB login or account discovery failed");
+      throw error;
     }
     return nbdb;
   }
@@ -102,7 +103,16 @@ export class NBDB extends Bank {
     logger.debug("Navigating to NBDB login page");
     await page.goto("https://client.bnc.ca/nbdb/login");
 
-    await page.waitForSelector("#password-hidden");
+    const restored = await Promise.race([
+      summaryPending.then((response) => response.ok()),
+      page.waitForSelector("#password-hidden").then(() => false),
+    ]);
+    if (restored) {
+      this.setAccounts(
+        SummaryResponse.parse(await (await summaryPending).json()),
+      );
+      return;
+    }
     this.diagnosticStage = "browser-update-banner";
     await this.dismissBrowserUpdate();
     this.diagnosticStage = "login-fill";
@@ -139,7 +149,14 @@ export class NBDB extends Bank {
     logger.debug("NBDB sign-in submitted");
     const authnResponse = await authnPending;
     logger.debug(`NBDB authentication response HTTP ${authnResponse.status()}`);
-    if (!authnResponse.ok()) throw new Error("NBDB credentials were rejected");
+    if (!authnResponse.ok()) {
+      const rejected = await authnResponse.json().catch(() => ({}));
+      if (rejected.errorCode === "E0000004")
+        throw new BankFailure("credentials-rejected");
+      throw new BankFailure(
+        authnResponse.status() === 429 ? "throttled" : "transport-failed",
+      );
+    }
     const json = await authnResponse.json();
     const isTwoFactorAuthenticationRequired = AuthnResponse.parse(json);
 
@@ -148,6 +165,12 @@ export class NBDB extends Bank {
       logger.debug("Two-factor authentication required");
       logger.debug("Filling in two-factor authentication code");
       const requestedAt = new Date();
+      await page
+        .getByRole("link", { name: "Email" })
+        .waitFor({ state: "visible" })
+        .catch(() => {
+          throw new BankFailure("challenge-required");
+        });
       await page.getByRole("link", { name: "Email" }).click();
       this.diagnosticStage = "email-poll";
       const code = await getEmailTwoFactorAuthenticationCode({
